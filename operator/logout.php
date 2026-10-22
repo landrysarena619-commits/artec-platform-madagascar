@@ -1,6 +1,16 @@
 <?php
-require_once __DIR__ . '/../includes/auth.php';
-if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !verify_csrf($_POST['csrf_token'] ?? null)) { http_response_code(419); exit; }
-logout_user();
-header('Location: ' . url('operator/login.php'));
-exit;
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../includes/functions.php';
+
+if (is_logged_in()) {
+    log_action('logout', 'users', current_user()['id'] ?? null, 'Déconnexion');
+}
+$_SESSION = [];
+if (ini_get('session.use_cookies')) {
+    $params = session_get_cookie_params();
+    setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
+}
+session_destroy();
+
+redirect(BASE_URL . 'visitor/index.php');

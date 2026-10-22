@@ -1,39 +1,189 @@
 <?php
-require_once __DIR__ . '/../includes/workspace.php';
-workspace_start('Publication', 'Créez une offre claire et actualisée.', 'publications.php', 'operator');
-$code = current_user()['operator_code'];
-$id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT) ?: 0;
-$item = ['title' => '', 'summary' => '', 'body' => '', 'category_id' => '', 'region' => 'National', 'status' => 'published', 'starts_at' => '', 'ends_at' => ''];
-if ($id) {
-    $statement = db()->prepare('SELECT * FROM publications WHERE id = ? AND operator_code = ?'); $statement->execute([$id, $code]);
-    $item = $statement->fetch() ?: exit('Publication introuvable.');
+/**
+ * Créer / modifier une publication.
+ */
+require_once __DIR__ . '/../includes/auth.php';
+require_role('operateur');
+
+$user = current_user();
+$opId = $user['operateur_id'];
+$id = (int) ($_GET['id'] ?? 0);
+
+$pub = [
+    'id' => 0,
+    'titre' => '',
+    'contenu' => '',
+    'type' => 'offre',
+    'service' => 'mobile',
+    'prix' => '',
+    'date_debut' => date('Y-m-d'),
+    'date_fin' => date('Y-m-d', strtotime('+30 days')),
+    'publie' => 1,
+];
+
+// --- Mode édition ---
+if ($id > 0) {
+    $stmt = db()->prepare("SELECT * FROM publications WHERE id = ? AND operateur_id = ?");
+    $stmt->execute([$id, $opId]);
+    $found = $stmt->fetch();
+    if (!$found) {
+        flash('error', 'Publication introuvable ou non autorisée.', 'danger');
+        redirect(BASE_URL . 'operator/publications.php');
+    }
+    $pub = $found;
 }
-$error = '';
+
+$errors = [];
+
+// --- Traitement POST ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!verify_csrf($_POST['csrf_token'] ?? null)) $error = 'La session a expiré.';
-    else {
-        $title = trim((string) ($_POST['title'] ?? ''));
-        $summary = trim((string) ($_POST['summary'] ?? ''));
-        $body = trim((string) ($_POST['body'] ?? ''));
-        $region = trim((string) ($_POST['region'] ?? 'National'));
-        $status = in_array($_POST['status'] ?? '', ['draft', 'published'], true) ? $_POST['status'] : 'draft';
-        if (mb_strlen($title) < 5 || mb_strlen($summary) < 10 || mb_strlen($body) < 20) $error = 'Complétez le titre, le résumé et le contenu.';
-        else {
-            $categoryId = filter_var($_POST['category_id'] ?? null, FILTER_VALIDATE_INT) ?: null;
-            $starts = $_POST['starts_at'] ?: null; $ends = $_POST['ends_at'] ?: null;
-            $slug = strtolower(trim(preg_replace('/[^a-zA-Z0-9]+/', '-', iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $title)), '-'));
-            if ($id) {
-                $save = db()->prepare('UPDATE publications SET title=?, slug=?, summary=?, body=?, category_id=?, region=?, status=?, starts_at=?, ends_at=? WHERE id=? AND operator_code=?');
-                $save->execute([$title, $slug, $summary, $body, $categoryId, $region, $status, $starts, $ends, $id, $code]);
-            } else {
-                $save = db()->prepare('INSERT INTO publications (operator_code,title,slug,summary,body,category_id,region,status,starts_at,ends_at) VALUES (?,?,?,?,?,?,?,?,?,?)');
-                $save->execute([$code, $title, $slug, $summary, $body, $categoryId, $region, $status, $starts, $ends]);
+    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
+        $errors[] = 'Session expirée. Rechargez la page.';
+    } else {
+        $titre    = trim($_POST['titre'] ?? '');
+        $contenu  = trim($_POST['contenu'] ?? '');
+        $type     = $_POST['type'] ?? 'offre';
+        $service  = $_POST['service'] ?? 'mobile';
+        $prix     = $_POST['prix'] !== '' ? (float) $_POST['prix'] : null;
+        $dateDeb  = $_POST['date_debut'] ?: null;
+        $dateFin  = $_POST['date_fin'] ?: null;
+        $publie   = isset($_POST['publie']) ? 1 : 0;
+
+        if ($titre === '') $errors[] = 'Le titre est obligatoire.';
+        if ($contenu === '') $errors[] = 'Le contenu est obligatoire.';
+        if (!in_array($type, ['offre', 'promotion', 'information', 'nouveaute'], true)) $errors[] = 'Type invalide.';
+        if (!array_key_exists($service, SERVICES)) $errors[] = 'Service invalide.';
+        if ($prix !== null && $prix < 0) $errors[] = 'Prix invalide.';
+
+        if (empty($errors)) {
+            // Slug unique
+            $slug = slugify($titre);
+            $base = $slug;
+            $i = 1;
+            while (true) {
+                $check = db()->prepare("SELECT id FROM publications WHERE slug = ? AND id != ?");
+                $check->execute([$slug, $id]);
+                if (!$check->fetch()) break;
+                $slug = $base . '-' . (++$i);
             }
-            flash('success', 'Publication enregistrée.'); header('Location: ' . url('operator/publications.php')); exit;
+
+            if ($id > 0) {
+                $stmt = db()->prepare("
+                    UPDATE publications
+                    SET titre=?, slug=?, contenu=?, type=?, service=?, prix=?, date_debut=?, date_fin=?, publie=?
+                    WHERE id=? AND operateur_id=?
+                ");
+                $stmt->execute([$titre, $slug, $contenu, $type, $service, $prix, $dateDeb, $dateFin, $publie, $id, $opId]);
+                log_action('update_publication', 'publications', $id, "Modifiée : $titre");
+                flash('success', 'Publication modifiée avec succès.', 'success');
+            } else {
+                $stmt = db()->prepare("
+                    INSERT INTO publications (operateur_id, titre, slug, contenu, type, service, prix, date_debut, date_fin, publie)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                $stmt->execute([$opId, $titre, $slug, $contenu, $type, $service, $prix, $dateDeb, $dateFin, $publie]);
+                log_action('create_publication', 'publications', (int) db()->lastInsertId(), "Créée : $titre");
+                flash('success', 'Publication créée avec succès.', 'success');
+            }
+            redirect(BASE_URL . 'operator/publications.php');
         }
     }
 }
-$categories = db()->query('SELECT id, name FROM categories WHERE is_active=1 ORDER BY name')->fetchAll();
+
+$pageTitle = $id > 0 ? 'Modifier la publication' : 'Nouvelle publication';
+require_once __DIR__ . '/../includes/header.php';
 ?>
-<?php if ($error): ?><div class="flash flash-error"><?= e($error) ?></div><?php endif; ?><form class="panel" method="post"><?= csrf_field() ?><div class="form-grid"><div class="field full"><label for="title">Titre</label><input id="title" name="title" maxlength="180" required value="<?= e($_POST['title'] ?? $item['title']) ?>"></div><div class="field full"><label for="summary">Résumé</label><input id="summary" name="summary" maxlength="350" required value="<?= e($_POST['summary'] ?? $item['summary']) ?>"></div><div class="field full"><label for="body">Description</label><textarea id="body" name="body" minlength="20" required><?= e($_POST['body'] ?? $item['body']) ?></textarea></div><div class="field"><label for="category_id">Catégorie</label><select id="category_id" name="category_id"><option value="">Sans catégorie</option><?php foreach ($categories as $category): ?><option value="<?= (int) $category['id'] ?>" <?= (string) ($item['category_id'] ?? '') === (string) $category['id'] ? 'selected' : '' ?>><?= e($category['name']) ?></option><?php endforeach; ?></select></div><div class="field"><label for="region">Région</label><input id="region" name="region" required value="<?= e($_POST['region'] ?? $item['region']) ?>"></div><div class="field"><label for="status">Statut</label><select id="status" name="status"><option value="published">Publié</option><option value="draft" <?= ($item['status'] ?? '') === 'draft' ? 'selected' : '' ?>>Brouillon</option></select></div><div class="field"><label for="starts_at">Début de l’offre</label><input id="starts_at" type="date" name="starts_at" value="<?= e($item['starts_at'] ?? '') ?>"></div><div class="field"><label for="ends_at">Fin de l’offre</label><input id="ends_at" type="date" name="ends_at" value="<?= e($item['ends_at'] ?? '') ?>"></div></div><div class="toolbar"><a class="button secondary" href="<?= e(url('operator/publications.php')) ?>">Annuler</a><button class="button" type="submit">Enregistrer</button></div></form>
-<?php workspace_end(); ?>
+
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="<?= e(BASE_URL) ?>operator/dashboard.php">Dashboard</a></li>
+        <li class="breadcrumb-item"><a href="<?= e(BASE_URL) ?>operator/publications.php">Publications</a></li>
+        <li class="breadcrumb-item active"><?= $id > 0 ? 'Modifier' : 'Nouvelle' ?></li>
+    </ol>
+</nav>
+
+<h1 class="fw-bold mb-4">
+    <i class="bi bi-<?= $id > 0 ? 'pencil-square' : 'plus-circle' ?> text-artec"></i>
+    <?= $id > 0 ? 'Modifier la publication' : 'Nouvelle publication' ?>
+</h1>
+
+<?php if ($errors): ?>
+    <div class="alert alert-danger">
+        <ul class="mb-0">
+            <?php foreach ($errors as $err): ?>
+                <li><?= e($err) ?></li>
+            <?php endforeach; ?>
+        </ul>
+    </div>
+<?php endif; ?>
+
+<form method="post" class="card card-artec">
+    <div class="card-body p-4">
+        <?= csrf_field() ?>
+
+        <div class="mb-3">
+            <label class="form-label fw-bold">Titre *</label>
+            <input type="text" name="titre" class="form-control form-control-lg" required maxlength="200"
+                   value="<?= e($pub['titre']) ?>" placeholder="Ex: Offre Fibre 100 Mbps">
+        </div>
+
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label class="form-label fw-bold">Type *</label>
+                <select name="type" class="form-select" required>
+                    <?php foreach (['offre', 'promotion', 'information', 'nouveaute'] as $t): ?>
+                        <option value="<?= e($t) ?>" <?= $pub['type'] === $t ? 'selected' : '' ?>>
+                            <?= e(ucfirst($t)) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label fw-bold">Service concerné *</label>
+                <select name="service" class="form-select" required>
+                    <?php foreach (SERVICES as $k => $v): ?>
+                        <option value="<?= e($k) ?>" <?= $pub['service'] === $k ? 'selected' : '' ?>><?= e($v) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label fw-bold">Contenu *</label>
+            <textarea name="contenu" class="form-control" rows="6" required
+                      placeholder="Décrivez votre offre en détail..."><?= e($pub['contenu']) ?></textarea>
+        </div>
+
+        <div class="row">
+            <div class="col-md-4 mb-3">
+                <label class="form-label fw-bold">Prix (Ar/mois)</label>
+                <input type="number" name="prix" class="form-control" step="0.01" min="0"
+                       value="<?= e((string) $pub['prix']) ?>" placeholder="0 = gratuit">
+            </div>
+            <div class="col-md-4 mb-3">
+                <label class="form-label fw-bold">Date de début</label>
+                <input type="date" name="date_debut" class="form-control" value="<?= e($pub['date_debut'] ?? '') ?>">
+            </div>
+            <div class="col-md-4 mb-3">
+                <label class="form-label fw-bold">Date de fin</label>
+                <input type="date" name="date_fin" class="form-control" value="<?= e($pub['date_fin'] ?? '') ?>">
+            </div>
+        </div>
+
+        <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" name="publie" id="publie"
+                   <?= $pub['publie'] ? 'checked' : '' ?>>
+            <label class="form-check-label fw-bold" for="publie">Publier immédiatement</label>
+        </div>
+    </div>
+    <div class="card-footer bg-white d-flex justify-content-between">
+        <a href="<?= e(BASE_URL) ?>operator/publications.php" class="btn btn-secondary">
+            <i class="bi bi-x-circle"></i> Annuler
+        </a>
+        <button type="submit" class="btn btn-artec">
+            <i class="bi bi-check-circle"></i> <?= $id > 0 ? 'Enregistrer' : 'Créer' ?>
+        </button>
+    </div>
+</form>
+
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>
