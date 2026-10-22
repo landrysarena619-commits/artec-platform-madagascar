@@ -1,0 +1,7 @@
+<?php
+require_once __DIR__ . '/../includes/workspace.php';
+workspace_start('Suivi des opérateurs', 'Indicateurs comparatifs sur les offres et les avis publiés.', 'operateurs.php', 'artec');
+$rows = db()->query("SELECT u.operator_code, u.name, u.email, COUNT(DISTINCT p.id) AS publications, COUNT(DISTINCT r.id) AS reviews, ROUND(AVG(r.rating),1) AS average, (SELECT COUNT(*) FROM complaints c WHERE c.operator_code=u.operator_code AND c.status IN ('open','in_progress')) AS complaints FROM users u LEFT JOIN publications p ON p.operator_code=u.operator_code AND p.status='published' LEFT JOIN reviews r ON r.operator_code=u.operator_code AND r.status='published' WHERE u.role='operator' GROUP BY u.id ORDER BY u.operator_code")->fetchAll();
+?>
+<div class="panel table-wrap"><table><thead><tr><th>Opérateur</th><th>Contact</th><th>Offres</th><th>Avis</th><th>Note moyenne</th><th>Réclamations ouvertes</th></tr></thead><tbody><?php foreach ($rows as $row): ?><tr><td><?= e($row['name']) ?></td><td><?= e($row['email']) ?></td><td><?= (int) $row['publications'] ?></td><td><?= (int) $row['reviews'] ?></td><td><?= $row['average'] !== null ? e($row['average']) . '/10' : '—' ?></td><td><?= (int) $row['complaints'] ?></td></tr><?php endforeach; ?></tbody></table></div>
+<?php workspace_end(); ?>

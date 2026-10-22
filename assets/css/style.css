@@ -1,0 +1,213 @@
+/* ============================================================
+   ARTEC Madagascar — Thème professionnel
+   ============================================================ */
+
+:root {
+    --artec-primary: #0b3d91;
+    --artec-secondary: #1e88e5;
+    --artec-accent: #ffc107;
+    --artec-dark: #0a1929;
+    --artec-light: #f4f6fa;
+    --artec-gradient: linear-gradient(135deg, #0b3d91 0%, #1e88e5 100%);
+    --artec-shadow: 0 4px 20px rgba(0, 0, 0, .08);
+    --artec-radius: 12px;
+}
+
+* { -webkit-font-smoothing: antialiased; }
+
+body {
+    font-family: 'Segoe UI', Roboto, 'Helvetica Neue', system-ui, sans-serif;
+    background: var(--artec-light);
+    color: #2c3e50;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+main { flex: 1; }
+
+/* ---------- Navbar ---------- */
+.artec-navbar {
+    background: var(--artec-gradient);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, .15);
+    padding: .75rem 0;
+}
+.artec-navbar .navbar-brand { letter-spacing: .5px; }
+.brand-logo {
+    background: var(--artec-accent);
+    color: var(--artec-dark);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-weight: 800;
+    font-size: 1.05rem;
+}
+.artec-navbar .nav-link {
+    color: rgba(255, 255, 255, .85) !important;
+    font-weight: 500;
+    transition: .2s;
+}
+.artec-navbar .nav-link:hover,
+.artec-navbar .nav-link.active {
+    color: #fff !important;
+    background: rgba(255, 255, 255, .1);
+    border-radius: 6px;
+}
+
+/* ---------- Hero ---------- */
+.hero-artec {
+    background: var(--artec-gradient);
+    color: #fff;
+    padding: 5rem 0;
+    margin: -1.5rem -15px 2rem;
+    border-radius: 0 0 var(--artec-radius) var(--artec-radius);
+    position: relative;
+    overflow: hidden;
+}
+.hero-artec::before {
+    content: '';
+    position: absolute;
+    top: -50%; right: -20%;
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, rgba(255,255,255,.1), transparent 70%);
+    border-radius: 50%;
+}
+.hero-artec h1 { font-weight: 800; font-size: 2.5rem; }
+.hero-artec .lead { font-size: 1.15rem; opacity: .95; }
+
+/* ---------- Cartes ---------- */
+.card-artec {
+    border: none;
+    border-radius: var(--artec-radius);
+    box-shadow: var(--artec-shadow);
+    transition: transform .25s ease, box-shadow .25s ease;
+    background: #fff;
+    overflow: hidden;
+}
+.card-artec:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, .12);
+}
+.card-artec .card-header {
+    background: var(--artec-gradient);
+    color: #fff;
+    border: none;
+    font-weight: 600;
+    padding: 1rem 1.25rem;
+}
+
+/* ---------- Badges opérateurs ---------- */
+.badge-operateur {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: .8rem;
+    font-weight: 600;
+    color: #fff;
+}
+.badge-orange { background: #FF7900; }
+.badge-yas    { background: #00A651; }
+.badge-airtel { background: #E40000; }
+
+/* ---------- Étoiles / notes ---------- */
+.rating-stars { color: var(--artec-accent); font-size: 1.1rem; }
+
+/* ---------- Boutons ---------- */
+.btn-artec {
+    background: var(--artec-gradient);
+    color: #fff;
+    border: none;
+    font-weight: 600;
+    padding: .55rem 1.25rem;
+    border-radius: 8px;
+    transition: .2s;
+}
+.btn-artec:hover { color: #fff; filter: brightness(1.1); transform: translateY(-1px); }
+
+/* ---------- Footer ---------- */
+.artec-footer {
+    background: var(--artec-dark);
+    color: #cfd8e3;
+    margin-top: auto;
+}
+.artec-footer a { color: var(--artec-accent); text-decoration: none; }
+.artec-footer a:hover { text-decoration: underline; }
+
+/* ---------- KPI / Dashboard ---------- */
+.kpi-card {
+    background: #fff;
+    border-radius: var(--artec-radius);
+    padding: 1.5rem;
+    box-shadow: var(--artec-shadow);
+    border-left: 4px solid var(--artec-secondary);
+    transition: .2s;
+}
+.kpi-card:hover { transform: translateY(-2px); }
+.kpi-card .kpi-value {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--artec-primary);
+}
+.kpi-card .kpi-label {
+    color: #6c757d;
+    font-size: .85rem;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+}
+.kpi-card.kpi-orange { border-left-color: #FF7900; }
+.kpi-card.kpi-yas    { border-left-color: #00A651; }
+.kpi-card.kpi-airtel { border-left-color: #E40000; }
+
+/* ---------- Chat ---------- */
+.chat-box {
+    height: 400px;
+    overflow-y: auto;
+    background: #f8f9fa;
+    border-radius: var(--artec-radius);
+    padding: 1rem;
+    border: 1px solid #e0e6ed;
+}
+.chat-message {
+    max-width: 75%;
+    margin-bottom: .75rem;
+    padding: .6rem 1rem;
+    border-radius: 14px;
+    font-size: .92rem;
+    word-wrap: break-word;
+}
+.chat-message.msg-me {
+    background: var(--artec-gradient);
+    color: #fff;
+    margin-left: auto;
+    border-bottom-right-radius: 4px;
+}
+.chat-message.msg-other {
+    background: #fff;
+    color: #2c3e50;
+    border: 1px solid #e0e6ed;
+    border-bottom-left-radius: 4px;
+}
+.chat-message .msg-time {
+    display: block;
+    font-size: .7rem;
+    opacity: .7;
+    margin-top: .2rem;
+}
+
+/* ---------- Tables ---------- */
+.table-artec thead {
+    background: var(--artec-primary);
+    color: #fff;
+}
+.table-artec th, .table-artec td { vertical-align: middle; }
+
+/* ---------- Utils ---------- */
+.text-artec { color: var(--artec-primary) !important; }
+.bg-artec { background: var(--artec-gradient) !important; }
+.rounded-artec { border-radius: var(--artec-radius) !important; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 768px) {
+    .hero-artec { padding: 3rem 0; }
+    .hero-artec h1 { font-size: 1.8rem; }
+    .kpi-card .kpi-value { font-size: 1.5rem; }
+}

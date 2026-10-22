@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+/python/models/*.pkl
+/python/logs/*.log
+/database/backups/*.sql
+__pycache__/
+*.py[cod]
+.phpunit.cache/

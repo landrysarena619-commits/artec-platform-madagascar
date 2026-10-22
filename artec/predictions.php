@@ -1,0 +1,10 @@
+<?php
+require_once __DIR__ . '/../includes/workspace.php';
+workspace_start('Prédictions ML', 'Résultats pré-calculés par le module Python.', 'predictions.php', 'artec');
+$rows = db()->query('SELECT * FROM predictions ORDER BY prediction_date DESC, operator_code LIMIT 90')->fetchAll();
+$reviewCount = (int) db()->query("SELECT COUNT(*) FROM reviews WHERE status='published'")->fetchColumn();
+$threshold = (int) (db()->query("SELECT setting_value FROM settings WHERE setting_key='minimum_reviews_for_training'")->fetchColumn() ?: 100);
+?>
+<div class="notice">Le module Python calcule les prévisions hors des pages PHP. Seules les valeurs enregistrées dans la table predictions sont affichées. Les indicateurs de risque et de sentiment sont des proxies faibles dérivés des notes/réclamations, pas des constats réglementaires. <?= $reviewCount < $threshold ? 'Seuil d’entraînement : ' . $reviewCount . ' / ' . $threshold . ' avis.' : 'Le seuil minimal d’avis est atteint.' ?></div>
+<div class="toolbar"><span>Historique des prédictions</span><a class="button secondary" href="<?= e(url('artec/rapports.php')) ?>">Exporter les données</a></div><div class="panel table-wrap"><table><thead><tr><th>Date</th><th>Opérateur</th><th>Satisfaction prédite</th><th>Risque non-conformité</th><th>Sentiment</th><th>Anomalies</th><th>Avis analysés</th></tr></thead><tbody><?php foreach ($rows as $row): ?><tr><td><?= e(date('d/m/Y', strtotime($row['prediction_date']))) ?></td><td><?= e(ucfirst($row['operator_code'])) ?></td><td><?= $row['satisfaction_score'] !== null ? e($row['satisfaction_score']) . '/10' : '—' ?></td><td><?= $row['compliance_risk'] !== null ? e($row['compliance_risk']) . '%' : '—' ?></td><td><?= e($row['sentiment_label'] ?: '—') ?></td><td><?= (int) $row['anomaly_count'] ?></td><td><?= (int) $row['review_count'] ?></td></tr><?php endforeach; ?></tbody></table><?php if (!$rows): ?><p class="empty-state">Aucune prédiction disponible. Vérifiez le planificateur Python et le seuil d’entraînement.</p><?php endif; ?></div>
+<?php workspace_end(); ?>

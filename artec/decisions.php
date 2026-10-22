@@ -1,0 +1,16 @@
+<?php
+require_once __DIR__ . '/../includes/workspace.php';
+workspace_start('Décisions & conformité', 'Émettez une demande officielle ou un avertissement.', 'decisions.php', 'artec');
+$error = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && verify_csrf($_POST['csrf_token'] ?? null)) {
+    $title = trim((string) ($_POST['title'] ?? '')); $body = trim((string) ($_POST['body'] ?? ''));
+    $type = in_array($_POST['decision_type'] ?? '', ['warning', 'compliance', 'decision', 'information'], true) ? $_POST['decision_type'] : 'information';
+    $operator = in_array($_POST['operator_code'] ?? '', ['orange', 'yas', 'airtel'], true) ? $_POST['operator_code'] : null;
+    if (mb_strlen($title) < 5 || mb_strlen($body) < 15) $error = 'Le titre et le texte de la décision sont requis.';
+    else { db()->prepare('INSERT INTO decisions (operator_code,author_id,title,body,decision_type,due_date) VALUES (?,?,?,?,?,?)')->execute([$operator, current_user()['id'], $title, $body, $type, $_POST['due_date'] ?: null]); log_activity('decision_created', current_user()['id'], ['operator_code' => $operator, 'type' => $type]); flash('success', 'Décision envoyée.'); header('Location: ' . url('artec/decisions.php')); exit; }
+}
+$rows = db()->query('SELECT d.*, u.name AS author_name FROM decisions d JOIN users u ON u.id=d.author_id ORDER BY d.created_at DESC LIMIT 100')->fetchAll();
+?>
+<?php if ($error): ?><div class="flash flash-error"><?= e($error) ?></div><?php endif; ?><form method="post" class="panel"><h2 style="font-size:20px">Nouvelle communication officielle</h2><?= csrf_field() ?><div class="form-grid"><div class="field"><label>Destinataire</label><select name="operator_code"><option value="">Tous les opérateurs</option><option value="orange">Orange</option><option value="yas">Yas</option><option value="airtel">Airtel</option></select></div><div class="field"><label>Type</label><select name="decision_type"><option value="information">Information</option><option value="compliance">Mise en conformité</option><option value="warning">Avertissement</option><option value="decision">Décision</option></select></div><div class="field"><label>Échéance (facultative)</label><input type="date" name="due_date"></div><div class="field full"><label>Titre</label><input name="title" maxlength="180" required></div><div class="field full"><label>Contenu</label><textarea name="body" minlength="15" required></textarea></div></div><button class="button" type="submit">Émettre</button></form>
+<div class="toolbar"><h2 style="font-size:19px;margin:0">Historique</h2></div><div class="review-list"><?php foreach ($rows as $item): ?><article class="panel"><div class="review-top"><span><?= e($item['operator_code'] ? ucfirst($item['operator_code']) : 'Tous les opérateurs') ?> · <?= e(date('d/m/Y', strtotime($item['created_at']))) ?></span><span class="badge <?= $item['decision_type'] === 'warning' ? 'warning' : '' ?>"><?= e($item['decision_type']) ?></span></div><h3 style="margin:10px 0"><?= e($item['title']) ?></h3><p><?= nl2br(e($item['body'])) ?></p></article><?php endforeach; ?></div>
+<?php workspace_end(); ?>
