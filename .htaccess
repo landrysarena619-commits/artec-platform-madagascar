@@ -1,14 +1,40 @@
-Options -Indexes
+# ============================================================
+# ARTEC Madagascar — Configuration Apache
+# ============================================================
+
+# --- Page d'accueil par défaut ---
 DirectoryIndex index.php
-<FilesMatch "^(\.env|\.git|README\.md|LICENSE)$">
-  Require all denied
-</FilesMatch>
+
+# --- URL propres (optionnel, actif si mod_rewrite activé) ---
 <IfModule mod_rewrite.c>
-  RewriteEngine On
-  RewriteRule (^|/)\. - [F]
+    RewriteEngine On
+    RewriteBase /artec-platform-madagascar/
+
+    # Empêcher l'accès aux dossiers sensibles
+    RewriteRule ^config/ - [F,L]
+    RewriteRule ^includes/ - [F,L]
+    RewriteRule ^database/ - [F,L]
+    RewriteRule ^python/ - [F,L]
 </IfModule>
+
+# --- Sécurité : bloquer les fichiers sensibles ---
+<FilesMatch "\.(sql|log|md|example\.php|htaccess)$">
+    Require all denied
+</FilesMatch>
+
+# --- En-têtes de sécurité ---
 <IfModule mod_headers.c>
-  Header always set X-Content-Type-Options "nosniff"
-  Header always set X-Frame-Options "SAMEORIGIN"
-  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
 </IfModule>
+
+# --- Encodage par défaut ---
+AddDefaultCharset UTF-8
+
+# --- Désactiver le listing des dossiers ---
+Options -Indexes
+
+# --- Fichiers d'erreur personnalisés ---
+ErrorDocument 403 /artec-platform-madagascar/visitor/index.php
+ErrorDocument 404 /artec-platform-madagascar/visitor/index.php

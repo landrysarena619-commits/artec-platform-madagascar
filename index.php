@@ -1,3 +1,6 @@
 <?php
-header('Location: visitor/index.php', true, 302);
+/**
+ * Point d'entrée racine → redirige vers l'espace visiteur.
+ */
+header('Location: visitor/index.php');
 exit;

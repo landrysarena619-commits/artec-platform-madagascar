@@ -1,38 +1,168 @@
 <?php
+/**
+ * Page d'accueil visiteur : liste des publications des 3 opérateurs.
+ */
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../includes/functions.php';
-$pageTitle = 'Observatoire des offres';
-$isPublic = true;
-$query = db()->query("SELECT p.*, COUNT(r.id) AS review_count, ROUND(AVG(r.rating), 1) AS average_rating FROM publications p LEFT JOIN reviews r ON r.publication_id = p.id AND r.status = 'published' WHERE p.status = 'published' AND (p.ends_at IS NULL OR p.ends_at >= CURDATE()) GROUP BY p.id ORDER BY p.created_at DESC");
-$publications = $query->fetchAll();
-require __DIR__ . '/../includes/header.php';
+
+$pageTitle = 'Accueil';
+
+// --- Récupération des publications avec infos opérateur + notes ---
+$stmt = db()->query("
+    SELECT
+        p.*,
+        o.nom AS operateur_nom,
+        o.slug AS operateur_slug,
+        o.couleur AS operateur_couleur,
+        o.logo AS operateur_logo,
+        COALESCE(AVG(a.note), 0) AS note_moyenne,
+        COUNT(a.id) AS nb_avis
+    FROM publications p
+    INNER JOIN operateurs o ON o.id = p.operateur_id
+    LEFT JOIN avis a ON a.operateur_id = p.operateur_id AND a.publie = 1
+    WHERE p.publie = 1
+      AND (p.date_fin IS NULL OR p.date_fin >= CURDATE())
+    GROUP BY p.id
+    ORDER BY p.created_at DESC
+    LIMIT 12
+");
+$publications = $stmt->fetchAll();
+
+// --- Statistiques globales pour le hero ---
+$stats = db()->query("
+    SELECT
+        (SELECT COUNT(*) FROM publications WHERE publie = 1) AS nb_pub,
+        (SELECT COUNT(*) FROM avis WHERE publie = 1) AS nb_avis,
+        (SELECT ROUND(AVG(note), 1) FROM avis WHERE publie = 1) AS note_moy,
+        (SELECT COUNT(*) FROM operateurs WHERE actif = 1) AS nb_op
+")->fetch();
+
+require_once __DIR__ . '/../includes/header.php';
 ?>
-<section class="hero">
-  <div class="eyebrow">Le numérique, en toute transparence</div>
-  <h1>Votre expérience réseau mérite d’être entendue.</h1>
-  <p>Consultez les offres des opérateurs, partagez votre expérience et suivez la qualité des services télécoms à Madagascar.</p>
-  <div class="hero-meta"><strong><?= count($publications) ?></strong> offres en cours <span aria-hidden="true">·</span> 3 opérateurs</div>
+
+<!-- ================= HERO ================= -->
+<section class="hero-artec">
+    <div class="container">
+        <div class="row align-items-center">
+            <div class="col-lg-8">
+                <span class="badge bg-warning text-dark mb-3 px-3 py-2">
+                    <i class="bi bi-shield-check"></i> Plateforme officielle ARTEC
+                </span>
+                <h1 class="mb-3">Régulation des télécommunications à Madagascar</h1>
+                <p class="lead mb-4">
+                    Comparez les offres d'Orange, Yas et Airtel, partagez votre expérience,
+                    et contribuez à améliorer la qualité des services télécoms dans toute l'île.
+                </p>
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="#publications" class="btn btn-warning btn-lg fw-bold">
+                        <i class="bi bi-megaphone"></i> Voir les offres
+                    </a>
+                    <a href="<?= e(BASE_URL) ?>visitor/statistiques.php" class="btn btn-outline-light btn-lg">
+                        <i class="bi bi-bar-chart"></i> Statistiques
+                    </a>
+                </div>
+            </div>
+            <div class="col-lg-4 d-none d-lg-block text-center">
+                <i class="bi bi-broadcast" style="font-size: 12rem; opacity: .2;"></i>
+            </div>
+        </div>
+    </div>
 </section>
-<section aria-labelledby="offers-title">
-  <div class="section-heading"><div><div class="eyebrow">À la une</div><h2 id="offers-title">Offres & actualités</h2></div><p>Les dernières publications des opérateurs</p></div>
-  <div class="filters" aria-label="Filtrer par opérateur">
-    <button class="filter-chip active" data-filter="all" type="button">Tous</button>
-    <button class="filter-chip" data-filter="orange" type="button">Orange</button>
-    <button class="filter-chip" data-filter="yas" type="button">Yas</button>
-    <button class="filter-chip" data-filter="airtel" type="button">Airtel</button>
-  </div>
-  <?php if (!$publications): ?><div class="empty-state">Aucune offre n’est publiée pour le moment.</div>
-  <?php else: ?><div class="publication-grid">
-    <?php foreach ($publications as $item): ?><article class="publication-card operator-<?= e($item['operator_code']) ?>" data-operator="<?= e($item['operator_code']) ?>">
-      <div class="card-band"></div><div class="card-content">
-        <div class="operator-label"><span class="operator-dot"></span><?= e(ucfirst($item['operator_code'])) ?> Madagascar</div>
-        <h3><?= e($item['title']) ?></h3><p><?= e($item['summary']) ?></p>
-        <div class="card-foot"><span><?= e($item['region']) ?> · <?= (int) $item['review_count'] ?> avis</span><a href="<?= e(url('visitor/publication.php?id=' . (int) $item['id'])) ?>">Découvrir <span aria-hidden="true">→</span></a></div>
-      </div>
-    </article><?php endforeach; ?>
-  </div><?php endif; ?>
+
+<!-- ================= KPI RAPIDES ================= -->
+<section class="container mb-4" style="margin-top: -3rem; position: relative; z-index: 2;">
+    <div class="row g-3">
+        <div class="col-md-3">
+            <div class="kpi-card text-center">
+                <div class="kpi-value"><?= (int) $stats['nb_op'] ?></div>
+                <div class="kpi-label">Opérateurs suivis</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="kpi-card text-center kpi-orange">
+                <div class="kpi-value"><?= (int) $stats['nb_pub'] ?></div>
+                <div class="kpi-label">Offres actives</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="kpi-card text-center kpi-yas">
+                <div class="kpi-value"><?= (int) $stats['nb_avis'] ?></div>
+                <div class="kpi-label">Avis citoyens</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="kpi-card text-center kpi-airtel">
+                <div class="kpi-value"><?= number_format((float) $stats['note_moy'], 1) ?><span class="small">/10</span></div>
+                <div class="kpi-label">Note moyenne</div>
+            </div>
+        </div>
+    </div>
 </section>
-<section style="padding-top:52px">
-  <div class="section-heading"><div><div class="eyebrow">Les indicateurs</div><h2>Un observatoire ouvert à tous</h2></div><a class="button secondary" href="<?= e(url('visitor/statistiques.php')) ?>">Voir les statistiques →</a></div>
-  <div class="notice">Les avis sont recueillis sans création de compte. Chaque contribution est protégée par des contrôles anti-spam et peut être signalée pour modération.</div>
+
+<!-- ================= PUBLICATIONS ================= -->
+<section id="publications" class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="fw-bold mb-0"><i class="bi bi-grid-3x3-gap text-artec"></i> Dernières publications</h2>
+        <span class="text-muted small"><?= count($publications) ?> offre(s) en cours</span>
+    </div>
+
+    <?php if (empty($publications)): ?>
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle"></i> Aucune publication pour le moment.
+        </div>
+    <?php else: ?>
+        <div class="row g-4">
+            <?php foreach ($publications as $p): ?>
+                <div class="col-md-6 col-lg-4">
+                    <article class="card card-artec h-100">
+                        <div class="p-3 pb-0 d-flex justify-content-between align-items-start">
+                            <span class="badge-operateur badge-<?= e($p['operateur_slug']) ?>">
+                                <?= e($p['operateur_nom']) ?>
+                            </span>
+                            <span class="badge bg-light text-dark">
+                                <?= e(SERVICES[$p['service']] ?? $p['service']) ?>
+                            </span>
+                        </div>
+                        <div class="card-body">
+                            <h5 class="card-title fw-bold"><?= e($p['titre']) ?></h5>
+                            <p class="card-text text-muted small">
+                                <?= e(mb_substr(strip_tags($p['contenu']), 0, 130)) ?>…
+                            </p>
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                <span class="rating-stars">
+                                    <?php
+                                    $n = round((float) $p['note_moyenne']);
+                                    for ($i = 1; $i <= 5; $i++) {
+                                        echo $i <= $n / 2 ? '<i class="bi bi-star-fill"></i>' : '<i class="bi bi-star"></i>';
+                                    }
+                                    ?>
+                                </span>
+                                <span class="small text-muted">
+                                    <?= number_format((float) $p['note_moyenne'], 1) ?>/10
+                                    (<?= (int) $p['nb_avis'] ?> avis)
+                                </span>
+                            </div>
+                            <?php if ($p['prix'] > 0): ?>
+                                <div class="fw-bold text-artec fs-5">
+                                    <?= number_format((float) $p['prix'], 0, ',', ' ') ?> Ar
+                                    <span class="small text-muted">/mois</span>
+                                </div>
+                            <?php else: ?>
+                                <div class="fw-bold text-success fs-6">Gratuit / Offert</div>
+                            <?php endif; ?>
+                        </div>
+                        <div class="card-footer bg-white border-0 pb-3">
+                            <a href="<?= e(BASE_URL) ?>visitor/publication.php?id=<?= (int) $p['id'] ?>"
+                               class="btn btn-artec w-100">
+                                Voir le détail <i class="bi bi-arrow-right"></i>
+                            </a>
+                        </div>
+                    </article>
+                </div>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
 </section>
-<?php require __DIR__ . '/../includes/footer.php'; ?>
+
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>
