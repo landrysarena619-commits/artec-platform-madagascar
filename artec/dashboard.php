@@ -1,10 +1,225 @@
 <?php
-require_once __DIR__ . '/../includes/workspace.php';
-workspace_start('Pilotage réglementaire', 'Vue comparée de la qualité et des signalements.', 'dashboard.php', 'artec');
-$pdo = db();
-$counts = $pdo->query("SELECT (SELECT COUNT(*) FROM publications WHERE status='published') AS publications, (SELECT COUNT(*) FROM reviews WHERE status='published') AS reviews, (SELECT COUNT(*) FROM reviews WHERE status='flagged') AS flagged, (SELECT COUNT(*) FROM complaints WHERE status IN ('open','in_progress')) AS complaints")->fetch();
-$operators = $pdo->query("SELECT u.operator_code, u.name, COUNT(DISTINCT p.id) AS publications, COUNT(DISTINCT r.id) AS reviews, ROUND(AVG(r.rating),1) AS average FROM users u LEFT JOIN publications p ON p.operator_code=u.operator_code AND p.status='published' LEFT JOIN reviews r ON r.operator_code=u.operator_code AND r.status='published' WHERE u.role='operator' AND u.is_active=1 GROUP BY u.id ORDER BY u.operator_code")->fetchAll();
+/**
+ * Dashboard comparatif ARTEC.
+ */
+require_once __DIR__ . '/../includes/auth.php';
+require_role('artec');
+
+// --- Comparatif par opérateur ---
+$stmt = db()->query("
+    SELECT
+        o.id, o.nom, o.slug, o.couleur,
+        (SELECT COUNT(*) FROM publications WHERE operateur_id = o.id AND publie = 1) AS nb_pub,
+        (SELECT COUNT(*) FROM avis WHERE operateur_id = o.id AND publie = 1) AS nb_avis,
+        (SELECT COALESCE(ROUND(AVG(note),2),0) FROM avis WHERE operateur_id = o.id AND publie = 1) AS note_moy,
+        (SELECT COUNT(*) FROM reclamations WHERE operateur_id = o.id AND statut IN ('nouveau','en_cours')) AS nb_reclam,
+        (SELECT COUNT(*) FROM decisions WHERE operateur_id = o.id AND statut IN ('ouverte','en_cours')) AS nb_decision
+    FROM operateurs o
+    WHERE o.actif = 1
+    ORDER BY o.id
+");
+$operateurs = $stmt->fetchAll();
+
+// --- Avis signalés à modérer ---
+$stmt = db()->query("
+    SELECT COUNT(*) FROM avis WHERE signale = 1 AND modere = 0
+");
+$avisSignales = (int) $stmt->fetchColumn();
+
+// --- Réclamations récentes ---
+$stmt = db()->query("
+    SELECT r.*, o.nom AS op_nom, o.slug AS op_slug
+    FROM reclamations r
+    INNER JOIN operateurs o ON o.id = r.operateur_id
+    ORDER BY r.created_at DESC
+    LIMIT 5
+");
+$reclamations = $stmt->fetchAll();
+
+// --- Décisions récentes ---
+$stmt = db()->query("
+    SELECT d.*, o.nom AS op_nom, o.slug AS op_slug
+    FROM decisions d
+    INNER JOIN operateurs o ON o.id = d.operateur_id
+    ORDER BY d.created_at DESC
+    LIMIT 5
+");
+$decisions = $stmt->fetchAll();
+
+// --- Prédictions récentes (si Python a tourné) ---
+$stmt = db()->query("
+    SELECT p.*, o.nom AS op_nom
+    FROM predictions p
+    INNER JOIN operateurs o ON o.id = p.operateur_id
+    ORDER BY p.date_prediction DESC
+    LIMIT 6
+");
+$predictions = $stmt->fetchAll();
+
+$pageTitle = 'Dashboard ARTEC';
+require_once __DIR__ . '/../includes/header.php';
 ?>
-<div class="dashboard-grid"><div class="dash-stat"><small>Publications actives</small><strong><?= (int) $counts['publications'] ?></strong></div><div class="dash-stat"><small>Avis publiés</small><strong><?= (int) $counts['reviews'] ?></strong></div><div class="dash-stat"><small>Avis signalés</small><strong><?= (int) $counts['flagged'] ?></strong><em>À modérer</em></div><div class="dash-stat"><small>Réclamations ouvertes</small><strong><?= (int) $counts['complaints'] ?></strong></div></div>
-<div class="toolbar"><h2 style="font-size:19px;margin:0">Comparatif opérateurs</h2><a class="button secondary" href="<?= e(url('artec/rapports.php')) ?>">Générer un rapport</a></div><div class="panel table-wrap"><table><thead><tr><th>Opérateur</th><th>Publications</th><th>Avis</th><th>Satisfaction</th></tr></thead><tbody><?php foreach ($operators as $item): ?><tr><td><span class="operator-label operator-<?= e($item['operator_code']) ?>"><span class="operator-dot"></span><?= e(ucfirst($item['operator_code'])) ?></span></td><td><?= (int) $item['publications'] ?></td><td><?= (int) $item['reviews'] ?></td><td><?= $item['average'] !== null ? e($item['average']) . '/10' : '—' ?></td></tr><?php endforeach; ?></tbody></table></div>
-<?php workspace_end(); ?>
+
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div>
+        <h1 class="fw-bold mb-1"><i class="bi bi-shield-check text-artec"></i> Dashboard ARTEC</h1>
+        <p class="text-muted mb-0">Vue d'ensemble de la régulation des télécoms</p>
+    </div>
+    <?php if ($avisSignales > 0): ?>
+        <a href="<?= e(BASE_URL) ?>artec/avis_moderation.php" class="btn btn-warning">
+            <i class="bi bi-flag-fill"></i> <?= $avisSignales ?> avis signalé(s)
+        </a>
+    <?php endif; ?>
+</div>
+
+<!-- ============ COMPARATIF OPÉRATEURS ============ -->
+<div class="row g-3 mb-4">
+    <?php foreach ($operateurs as $op): ?>
+        <div class="col-md-4">
+            <div class="card card-artec h-100" style="border-top: 4px solid <?= e($op['couleur']) ?>;">
+                <div class="card-body">
+                    <h5 class="fw-bold mb-1"><?= e($op['nom']) ?></h5>
+                    <div class="text-muted small mb-3">Note globale</div>
+                    <div class="display-5 fw-bold text-artec mb-1">
+                        <?= number_format((float) $op['note_moy'], 1) ?><span class="fs-5">/10</span>
+                    </div>
+                    <div class="rating-stars mb-3">
+                        <?php
+                        $s = round((float) $op['note_moy'] / 2);
+                        for ($i = 1; $i <= 5; $i++) echo $i <= $s ? '<i class="bi bi-star-fill"></i>' : '<i class="bi bi-star"></i>';
+                        ?>
+                    </div>
+                    <div class="row g-2 small">
+                        <div class="col-6"><i class="bi bi-megaphone text-primary"></i> <strong><?= (int) $op['nb_pub'] ?></strong> publications</div>
+                        <div class="col-6"><i class="bi bi-star text-warning"></i> <strong><?= (int) $op['nb_avis'] ?></strong> avis</div>
+                        <div class="col-6"><i class="bi bi-exclamation-circle text-danger"></i> <strong><?= (int) $op['nb_reclam'] ?></strong> réclam.</div>
+                        <div class="col-6"><i class="bi bi-shield-exclamation text-warning"></i> <strong><?= (int) $op['nb_decision'] ?></strong> décisions</div>
+                    </div>
+                    <a href="<?= e(BASE_URL) ?>artec/operateurs.php?id=<?= (int) $op['id'] ?>"
+                       class="btn btn-sm btn-outline-primary w-100 mt-3">
+                        Voir le détail <i class="bi bi-arrow-right"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+    <?php endforeach; ?>
+</div>
+
+<div class="row g-4">
+    <!-- ===== GRAPHIQUE COMPARATIF ===== -->
+    <div class="col-lg-8">
+        <div class="card card-artec">
+            <div class="card-header"><i class="bi bi-bar-chart"></i> Comparaison des notes moyennes</div>
+            <div class="card-body"><canvas id="compChart" height="100"></canvas></div>
+        </div>
+    </div>
+
+    <!-- ===== PRÉDICTIONS ML ===== -->
+    <div class="col-lg-4">
+        <div class="card card-artec h-100">
+            <div class="card-header"><i class="bi bi-cpu"></i> Prédictions ML récentes</div>
+            <div class="card-body p-0">
+                <?php if (empty($predictions)): ?>
+                    <div class="p-3 text-muted small">
+                        Aucune prédiction disponible.<br>
+                        <em>Lance <code>python predict.py</code> pour générer.</em>
+                    </div>
+                <?php else: ?>
+                    <ul class="list-group list-group-flush">
+                        <?php foreach ($predictions as $p): ?>
+                            <li class="list-group-item small">
+                                <strong><?= e($p['op_nom']) ?></strong>
+                                <span class="badge bg-info"><?= e($p['type_prediction']) ?></span><br>
+                                Valeur : <strong><?= number_format((float) $p['valeur'], 2) ?></strong>
+                                <?php if ($p['label']): ?> · <?= e($p['label']) ?><?php endif; ?>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============ RÉCLAMATIONS + DÉCISIONS ============ -->
+<div class="row g-4 mt-3">
+    <div class="col-lg-6">
+        <div class="card card-artec h-100">
+            <div class="card-header"><i class="bi bi-exclamation-circle"></i> Réclamations récentes</div>
+            <div class="card-body p-0">
+                <?php if (empty($reclamations)): ?>
+                    <p class="text-muted p-3 mb-0">Aucune réclamation.</p>
+                <?php else: ?>
+                    <ul class="list-group list-group-flush">
+                        <?php foreach ($reclamations as $r): ?>
+                            <li class="list-group-item">
+                                <div class="d-flex justify-content-between">
+                                    <span class="badge-operateur badge-<?= e($r['op_slug']) ?>"><?= e($r['op_nom']) ?></span>
+                                    <span class="badge bg-<?= $r['statut'] === 'nouveau' ? 'danger' : ($r['statut'] === 'en_cours' ? 'warning text-dark' : ($r['statut'] === 'resolu' ? 'success' : 'secondary')) ?>">
+                                        <?= e($r['statut']) ?>
+                                    </span>
+                                </div>
+                                <div class="mt-1"><strong><?= e($r['sujet']) ?></strong></div>
+                                <small class="text-muted"><?= date('d/m/Y', strtotime($r['created_at'])) ?></small>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card card-artec h-100">
+            <div class="card-header d-flex justify-content-between">
+                <span><i class="bi bi-shield-exclamation"></i> Décisions récentes</span>
+                <a href="<?= e(BASE_URL) ?>artec/decisions.php" class="btn btn-sm btn-light">Gérer</a>
+            </div>
+            <div class="card-body p-0">
+                <?php if (empty($decisions)): ?>
+                    <p class="text-muted p-3 mb-0">Aucune décision.</p>
+                <?php else: ?>
+                    <ul class="list-group list-group-flush">
+                        <?php foreach ($decisions as $d): ?>
+                            <li class="list-group-item">
+                                <div class="d-flex justify-content-between">
+                                    <span class="badge-operateur badge-<?= e($d['op_slug']) ?>"><?= e($d['op_nom']) ?></span>
+                                    <span class="badge bg-<?= $d['gravite'] === 'critique' ? 'danger' : ($d['gravite'] === 'haute' ? 'warning text-dark' : 'secondary') ?>">
+                                        <?= e($d['gravite']) ?>
+                                    </span>
+                                </div>
+                                <div class="mt-1"><strong><?= e($d['titre']) ?></strong></div>
+                                <small class="text-muted"><?= e(ucfirst(str_replace('_', ' ', $d['type']))) ?></small>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const compCtx = document.getElementById('compChart');
+if (compCtx) {
+    new Chart(compCtx, {
+        type: 'bar',
+        data: {
+            labels: <?= json_encode(array_column($operateurs, 'nom')) ?>,
+            datasets: [{
+                label: 'Note moyenne /10',
+                data: <?= json_encode(array_map(fn($o) => (float) $o['note_moy'], $operateurs)) ?>,
+                backgroundColor: <?= json_encode(array_column($operateurs, 'couleur')) ?>,
+                borderRadius: 8,
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: { y: { min: 0, max: 10 } }
+        }
+    });
+}
+</script>
+
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>

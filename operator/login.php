@@ -1,10 +1,6 @@
 <?php
-/**
- * Connexion espace opérateur.
- */
 require_once __DIR__ . '/../includes/login_helper.php';
 
-// Si déjà connecté, rediriger
 if (is_logged_in() && has_role('operateur')) {
     redirect(BASE_URL . 'operator/dashboard.php');
 }
@@ -61,6 +57,15 @@ require_once __DIR__ . '/../includes/header.php';
                         <i class="bi bi-box-arrow-in-right"></i> Se connecter
                     </button>
                 </form>
+
+                <div class="d-flex justify-content-between mt-3 small">
+                    <a href="<?= e(BASE_URL) ?>operator/register.php">
+                        <i class="bi bi-person-plus"></i> Créer un compte
+                    </a>
+                    <a href="<?= e(BASE_URL) ?>operator/forgot_password.php">
+                        <i class="bi bi-key"></i> Mot de passe oublié ?
+                    </a>
+                </div>
 
                 <hr class="my-4">
                 <div class="small text-muted">

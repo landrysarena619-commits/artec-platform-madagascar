@@ -1,12 +1,129 @@
 <?php
-require_once __DIR__ . '/../includes/workspace.php';
-workspace_start('Rapports', 'Exportez les indicateurs de l’observatoire.', 'rapports.php', 'artec');
-if (($_GET['format'] ?? '') === 'csv') {
-    $rows = db()->query("SELECT operator_code, COUNT(*) AS review_count, ROUND(AVG(rating),2) AS average_rating, SUM(status='flagged') AS flagged_count FROM reviews GROUP BY operator_code")->fetchAll();
-    header('Content-Type: text/csv; charset=utf-8'); header('Content-Disposition: attachment; filename="rapport-artec-' . date('Y-m-d') . '.csv"'); echo "\xEF\xBB\xBF";
-    $out = fopen('php://output', 'w'); fputcsv($out, ['Opérateur', 'Avis', 'Note moyenne', 'Signalés'], ';'); foreach ($rows as $row) fputcsv($out, $row, ';'); fclose($out); exit;
+require_once __DIR__ . '/../includes/auth.php';
+require_role('artec');
+
+// --- Export CSV global (tous opérateurs) ---
+if (isset($_GET['export']) && $_GET['export'] === 'csv') {
+    $stmt = db()->query("
+        SELECT
+            o.nom AS operateur,
+            COUNT(a.id) AS nb_avis,
+            COALESCE(ROUND(AVG(a.note),2),0) AS note_moy,
+            SUM(CASE WHEN a.note >= 7 THEN 1 ELSE 0 END) AS satisfaits,
+            SUM(CASE WHEN a.note <= 3 THEN 1 ELSE 0 END) AS insatisfaits
+        FROM operateurs o
+        LEFT JOIN avis a ON a.operateur_id = o.id AND a.publie = 1
+        WHERE o.actif = 1
+        GROUP BY o.id
+        ORDER BY o.nom
+    ");
+    $rows = $stmt->fetchAll();
+
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="rapport_artec_' . date('Ymd_His') . '.csv"');
+    $out = fopen('php://output', 'w');
+    fwrite($out, "\xEF\xBB\xBF");
+    fputcsv($out, ['Opérateur', 'Nb avis', 'Note moyenne', 'Satisfaits (≥7)', 'Insatisfaits (≤3)']);
+    foreach ($rows as $r) {
+        fputcsv($out, [$r['operateur'], $r['nb_avis'], $r['note_moy'], $r['satisfaits'], $r['insatisfaits']]);
+    }
+    fclose($out);
+    log_action('export_rapport', 'rapports', null, 'Export CSV global');
+    exit;
 }
-$rows = db()->query("SELECT operator_code, COUNT(*) AS review_count, ROUND(AVG(rating),2) AS average_rating, SUM(status='flagged') AS flagged_count FROM reviews GROUP BY operator_code")->fetchAll();
+
+// --- Données affichage ---
+$stmt = db()->query("
+    SELECT
+        o.id, o.nom, o.slug, o.couleur,
+        COUNT(a.id) AS nb_avis,
+        COALESCE(ROUND(AVG(a.note),2),0) AS note_moy,
+        SUM(CASE WHEN a.note >= 7 THEN 1 ELSE 0 END) AS satisfaits,
+        SUM(CASE WHEN a.note <= 3 THEN 1 ELSE 0 END) AS insatisfaits
+    FROM operateurs o
+    LEFT JOIN avis a ON a.operateur_id = o.id AND a.publie = 1
+    WHERE o.actif = 1
+    GROUP BY o.id
+    ORDER BY o.nom
+");
+$rows = $stmt->fetchAll();
+
+$stmt = db()->query("
+    SELECT region, COUNT(*) AS nb, ROUND(AVG(note),1) AS moy
+    FROM avis WHERE publie = 1
+    GROUP BY region ORDER BY nb DESC LIMIT 10
+");
+$parRegion = $stmt->fetchAll();
+
+$pageTitle = 'Rapports ARTEC';
+require_once __DIR__ . '/../includes/header.php';
 ?>
-<div class="panel"><h2>Rapport de performance opérateurs</h2><p>Consolidation des avis enregistrés dans l’observatoire.</p><a class="button" href="<?= e(url('artec/rapports.php?format=csv')) ?>">Télécharger le rapport CSV</a> <button class="button secondary" onclick="window.print()" type="button">Imprimer / PDF</button></div><div class="panel table-wrap" style="margin-top:18px"><table><thead><tr><th>Opérateur</th><th>Nombre d’avis</th><th>Note moyenne / 10</th><th>Avis signalés</th></tr></thead><tbody><?php foreach ($rows as $row): ?><tr><td><?= e(ucfirst($row['operator_code'])) ?></td><td><?= (int) $row['review_count'] ?></td><td><?= $row['average_rating'] !== null ? e($row['average_rating']) : '—' ?></td><td><?= (int) $row['flagged_count'] ?></td></tr><?php endforeach; ?></tbody></table></div>
-<?php workspace_end(); ?>
+
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h1 class="fw-bold mb-0"><i class="bi bi-file-earmark-bar-graph text-artec"></i> Rapports</h1>
+    <a href="?export=csv" class="btn btn-artec">
+        <i class="bi bi-download"></i> Exporter tout en CSV
+    </a>
+</div>
+
+<div class="card card-artec mb-4">
+    <div class="card-header"><i class="bi bi-table"></i> Synthèse par opérateur</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-artec mb-0">
+                <thead>
+                    <tr>
+                        <th>Opérateur</th>
+                        <th>Avis</th>
+                        <th>Note moyenne</th>
+                        <th>Satisfaits (≥7)</th>
+                        <th>Insatisfaits (≤3)</th>
+                        <th>Taux satisfaction</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($rows as $r):
+                        $taux = $r['nb_avis'] > 0 ? round($r['satisfaits'] / $r['nb_avis'] * 100) : 0;
+                    ?>
+                        <tr>
+                            <td>
+                                <span class="badge-operateur badge-<?= e($r['slug']) ?>"><?= e($r['nom']) ?></span>
+                            </td>
+                            <td><?= (int) $r['nb_avis'] ?></td>
+                            <td><strong class="text-artec"><?= number_format((float) $r['note_moy'], 1) ?>/10</strong></td>
+                            <td class="text-success"><?= (int) $r['satisfaits'] ?></td>
+                            <td class="text-danger"><?= (int) $r['insatisfaits'] ?></td>
+                            <td>
+                                <div class="progress" style="height: 20px;">
+                                    <div class="progress-bar bg-success" style="width: <?= $taux ?>%"><?= $taux ?>%</div>
+                                </div>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="card card-artec">
+    <div class="card-header"><i class="bi bi-geo-alt"></i> Top régions par nombre d'avis</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-artec mb-0">
+                <thead><tr><th>Région</th><th>Nb avis</th><th>Note moyenne</th></tr></thead>
+                <tbody>
+                    <?php foreach ($parRegion as $r): ?>
+                        <tr>
+                            <td><strong><?= e($r['region']) ?></strong></td>
+                            <td><?= (int) $r['nb'] ?></td>
+                            <td><?= number_format((float) $r['moy'], 1) ?>/10</td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>
