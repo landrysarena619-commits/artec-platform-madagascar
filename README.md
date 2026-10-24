@@ -1,38 +1,150 @@
-# ARTEC Madagascar
+# Plateforme Intelligente de Regulation des Telecommunications a Madagascar
 
-Plateforme PHP/MySQL pour publier les offres des trois opérateurs, recueillir des avis anonymes, traiter les réclamations et suivre les indicateurs réglementaires. Le module de machine learning Python fonctionne séparément et écrit ses résultats dans MySQL.
+Plateforme web officielle de regulation des telecommunications a Madagascar pour l'ARTEC (Autorite de Regulation des Technologies de Communication) et les 3 operateurs : Orange Madagascar, Yas Madagascar et Airtel Madagascar.
 
-## Prérequis
+## Objectif du Projet
 
-- WAMP avec PHP 8.1+ et les extensions `pdo_mysql`, `mbstring` et `openssl`.
-- MySQL 8.0+.
-- Python 3.10+ pour les modèles ML.
+Developper une plateforme moderne, securisee et professionnelle permettant a l'ARTEC de :
+- Centraliser les informations des operateurs.
+- Surveiller la qualite des services.
+- Collecter les avis des visiteurs.
+- Analyser les donnees via Machine Learning (Python).
+- Detecter les manquements reglementaires.
 
-## Installation locale
+## Fonctionnement General (4 Espaces)
 
-1. Placez le dossier dans `C:\wamp64\www\artec-platform-madagascar` et démarrez Apache et MySQL.
-2. Importez `database/database.sql` une fois dans phpMyAdmin ou avec `mysql -u root -p < database/database.sql`.
-3. Configurez les variables d’environnement `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `APP_ENV` et `IP_HASH_KEY` dans Apache/PHP. La base par défaut s’appelle `artec_platform`; utilisez `APP_URL` si l’application est publiée sous un chemin personnalisé.
-4. Ouvrez `http://localhost/artec-platform-madagascar/`.
+La plateforme est divisee en 4 espaces distincts, chacun avec ses propres fonctionnalites.
 
-Les comptes de démonstration sont `orange@demo.mg`, `yas@demo.mg`, `airtel@demo.mg`, `artec@demo.mg` et `admin@demo.mg`. Leur mot de passe initial est `password`. Remplacez-les et définissez un secret `IP_HASH_KEY` fort avant tout déploiement. N’exposez jamais les identifiants locaux `root` en production.
+### 1. Visiteur (Anonyme, sans compte)
+- Consulte les publications des 3 operateurs.
+- Donne son avis (note 0-10, commentaire, region, service) sans creer de compte.
+- Consulte les statistiques publiques comparatives (graphiques Chart.js).
+- Discute en direct avec l'operateur (messagerie instantanee).
+- Signale un probleme.
 
-## Module ML
+### 2. Operateur (Login requis)
+- Publie et gere ses offres/promotions (CRUD complet).
+- Consulte ses avis et statistiques detaillees.
+- Repond aux reclamations des visiteurs.
+- Discute avec les visiteurs et avec l'ARTEC (messagerie instantanee).
+- Consulte les decisions et avertissements de l'ARTEC.
+- Exporte ses avis en CSV/Excel.
 
-Depuis `python/`, installez `python -m pip install -r requirements.txt`, définissez les mêmes variables `DB_*`, puis lancez `python train_models.py`. L’entraînement est ignoré avant le seuil configurable (100 avis par défaut). `python predict.py` entraîne les modèles manquants lorsque le seuil est atteint, puis écrit les scores quotidiens dans `predictions`.
+### 3. ARTEC (Login requis)
+- Dashboard comparatif des 3 operateurs.
+- Modere les avis signales.
+- Emet des decisions (avertissements, mises en conformite).
+- Discute avec les operateurs.
+- Consulte les predictions Machine Learning (satisfaction, risque, sentiment, anomalies).
+- Consulte les alertes automatiques.
+- Exporte des rapports CSV.
 
-Les tâches Windows peuvent être enregistrées depuis PowerShell avec `python/schedule_tasks.ps1 -PythonExe "C:\chemin\vers\python.exe"`. Le script programme les prédictions chaque jour à 02:00 et l’entraînement le dimanche à 03:00. Définissez l’environnement de la tâche avec les identifiants MySQL adaptés.
+### 4. Administrateur (Login requis)
+- Gere les comptes utilisateurs (creation, validation, suppression).
+- Surveille les logs d'activite.
+- Configure la plateforme.
 
-Les labels de risque et de sentiment utilisent actuellement des proxies faibles dérivés des notes et des réclamations. Ils ne remplacent pas des labels expertisés et ne doivent pas être utilisés seuls pour prendre une décision réglementaire.
+## Systeme d'Alertes Automatiques
 
-## Sauvegardes
+Le projet integre un systeme intelligent qui surveille en permanence les donnees :
+- Des qu'un visiteur laisse un avis (ou un signalement), PHP verifie immediatement si les seuils sont depasses.
+- Si la note moyenne < 5/10, l'ARTEC cree automatiquement une decision de "Mise en conformite" et envoie un message prive a l'operateur.
+- Si plus de 40% des avis sont negatifs, l'ARTEC envoie un avertissement automatique.
+- Si un operateur a 3 reclamations ouvertes, il recoit une alerte immediate.
+- Toutes ces alertes sont visibles dans l'espace ARTEC et dans la messagerie de l'operateur.
 
-Configurez `MYSQLDUMP_EXE` et `MYSQL_CNF` pour pointer vers `mysqldump.exe` et un fichier d’options MySQL protégé par les ACL Windows, puis lancez `database/backup.ps1`. Les exports SQL restent hors d’accès HTTP et les fichiers âgés de plus de 30 jours sont supprimés. Testez régulièrement une restauration sur une base isolée.
+## Module Machine Learning (Python)
 
-## Sécurité de déploiement
+Un module Python separe entraine 4 modeles scikit-learn sur les avis collectes :
 
-- Définissez `APP_ENV=production`, un `APP_URL` correct et un secret `IP_HASH_KEY` dédié.
-- Utilisez un compte MySQL à privilèges minimaux et HTTPS.
-- Changez/supprimez les comptes de démonstration et désactivez l’affichage des erreurs PHP.
-- Les protections `.htaccess` supposent qu’Apache autorise `AllowOverride`; vérifiez-les avec la configuration WAMP de production.
-- Les prédictions sont des aides d’analyse exploratoires; validez les modèles avant tout usage décisionnel.
+| Modele | Algorithme | Role |
+|--------|-----------|------|
+| satisfaction_rf.pkl | Random Forest Regressor | Predit la note /10 par operateur |
+| risque_rf.pkl | Random Forest Classifier | Probabilite de non-conformite |
+| sentiment_tfidf.pkl | TF-IDF + Logistic Regression | Sentiment des commentaires |
+| anomaly_if.pkl | Isolation Forest | Detection d'avis anormaux |
+
+Automatisation : les predictions se lancent automatiquement toutes les heures (ou apres 60 min), des qu'une page est chargee.
+
+## Module Scraping (Reseaux Sociaux)
+
+Le projet inclut un simulateur de collecte de donnees provenant de Facebook, Instagram et TikTok. Il genere des posts realistes pour les 3 operateurs et les stocke dans la table social_posts. Ces donnees sont visibles dans l'espace ARTEC (page artec/social.php).
+
+## Stack Technique
+
+| Composant | Technologie |
+|-----------|-------------|
+| Backend | PHP 8.1+ (PDO, sessions securisees) |
+| Base de donnees | MySQL 8 (10 tables, InnoDB, utf8mb4) |
+| Frontend | HTML5, Bootstrap 5.3, JavaScript (AJAX polling) |
+| Graphiques | Chart.js 4 |
+| ML | Python 3.10+, scikit-learn, pandas |
+| Scraping | Apify (simulation) |
+| Serveur local | WAMP |
+
+## Installation Locale (WAMP)
+
+### Prerequis
+- WAMP installe (Apache + PHP 8.1+ + MySQL 8)
+- Extension php_pdo_mysql activee
+- Git
+
+### 1. Cloner le projet
+cd C:\wamp64\www
+git clone https://github.com/landrysarena619-commits/artec-platform-madagascar.git
+
+### 2. Creer la base de donnees
+- Ouvrir http://localhost/phpmyadmin
+- Creer une base artec_platform (utf8mb4_general_ci)
+- Onglet Importer -> selectionner database/database.sql -> Executer
+
+### 3. Configurer la connexion
+- Copier config/db.example.php en config/db.php
+- Editer config/db.php avec tes identifiants MySQL (par defaut WAMP : root / vide)
+
+### 4. Lancer la plateforme
+Ouvrir : http://localhost/artec-platform-madagascar/
+
+## Comptes de Test
+
+| Role | Email | Mot de passe |
+|------|-------|--------------|
+| Administrateur | admin@artec.mg | Admin@2025 |
+| ARTEC | artec@artec.mg | Artec@2025 |
+| Orange Madagascar | orange@orange.mg | Orange@2025 |
+| Yas Madagascar | yas@yas.mg | Yas@2025 |
+| Airtel Madagascar | airtel@airtel.mg | Airtel@2025 |
+
+Important : Les comptes doivent etre crees manuellement lors de la premiere installation (le premier compte de chaque role est auto-active).
+
+## Structure du Projet
+
+artec-platform-madagascar/
+- config/          -> Connexion PDO, constantes, sessions
+- includes/        -> Header, footer, auth, fonctions utilitaires, alertes
+- assets/          -> CSS, JS, images
+- visitor/         -> Espace visiteur (public)
+- operator/        -> Espace operateur (login requis)
+- artec/           -> Espace ARTEC (login requis)
+- admin/           -> Espace administrateur (login requis)
+- api/             -> Endpoints AJAX (JSON)
+- database/        -> Script SQL + donnees de demo
+- python/          -> Module ML (scikit-learn) + Scraping
+- docs/            -> Documentation, captures d'ecran
+
+## Securite
+
+- Hash BCRYPT pour les mots de passe.
+- Token CSRF sur tous les formulaires POST.
+- Sessions HttpOnly + SameSite Lax.
+- Hash SHA-256 des IP (RGPD).
+- Requetes preparees PDO (anti-injection SQL).
+- Echappement HTML systematique (anti-XSS).
+- Anti-spam sur les avis (1/IP/24h) et messages (10/min).
+- Verification stricte des roles (require_role()).
+- Logs de toutes les actions sensibles.
+
+## Auteur
+
+Landry Sarena
+GitHub : https://github.com/landrysarena619-commits

@@ -215,6 +215,26 @@ CREATE TABLE `logs` (
   CONSTRAINT `fk_logs_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `social_posts` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `operateur_id` INT UNSIGNED NOT NULL,
+  `plateforme` ENUM('facebook','instagram','tiktok') NOT NULL,
+  `post_id` VARCHAR(100) DEFAULT NULL,
+  `texte` TEXT DEFAULT NULL,
+  `likes` INT UNSIGNED DEFAULT 0,
+  `commentaires` INT UNSIGNED DEFAULT 0,
+  `partages` INT UNSIGNED DEFAULT 0,
+  `vues` INT UNSIGNED DEFAULT 0,
+  `date_post` DATETIME DEFAULT NULL,
+  `url` VARCHAR(500) DEFAULT NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `fk_social_operateur` (`operateur_id`),
+  KEY `idx_plateforme` (`plateforme`),
+  CONSTRAINT `fk_social_operateur` FOREIGN KEY (`operateur_id`) REFERENCES `operateurs` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
 CREATE TABLE `password_resets` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `user_id` INT UNSIGNED NOT NULL,
