@@ -1,16 +1,8 @@
 <?php
-/**
- * Helper de connexion réutilisable par les 3 espaces (operator, artec, admin).
- */
-
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/functions.php';
 
-/**
- * Tente de connecter un utilisateur avec email + password + rôle attendu.
- * Retourne un tableau ['success' => bool, 'message' => string].
- */
 function attempt_login(string $email, string $password, string $expectedRole): array {
     $email = trim(strtolower($email));
 
@@ -36,7 +28,6 @@ function attempt_login(string $email, string $password, string $expectedRole): a
         return ['success' => false, 'message' => 'Vous n\'avez pas accès à cet espace.'];
     }
 
-    // --- Régénérer la session (anti-fixation) ---
     session_regenerate_id(true);
 
     $_SESSION['user'] = [
@@ -50,7 +41,6 @@ function attempt_login(string $email, string $password, string $expectedRole): a
     ];
     $_SESSION['last_activity'] = time();
 
-    // --- Mettre à jour la BDD ---
     db()->prepare("UPDATE users SET derniere_connexion = NOW(), ip_derniere_connexion = ? WHERE id = ?")
         ->execute([$_SERVER['REMOTE_ADDR'] ?? null, $user['id']]);
 

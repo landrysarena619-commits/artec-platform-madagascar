@@ -24,17 +24,17 @@ $logs = $stmt->fetchAll();
 
 $users = db()->query("SELECT id, nom FROM users ORDER BY nom")->fetchAll();
 
-$pageTitle = 'Logs d\'activité';
+$pageTitle = 'Logs d\'activite';
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
-<h1 class="fw-bold mb-4"><i class="bi bi-list-check text-artec"></i> Logs d'activité</h1>
+<h1 class="fw-bold mb-4"><i class="bi bi-list-check text-artec"></i> Logs d'activite</h1>
 
 <form method="get" class="card card-artec mb-4">
     <div class="card-body">
         <div class="row g-2">
             <div class="col-md-4">
-                <input type="text" name="action" class="form-control" placeholder="Filtrer par action…"
+                <input type="text" name="action" class="form-control" placeholder="Filtrer par action..."
                        value="<?= e($filterAction) ?>">
             </div>
             <div class="col-md-4">
@@ -54,20 +54,20 @@ require_once __DIR__ . '/../includes/header.php';
 </form>
 
 <div class="card card-artec">
-    <div class="card-header"><i class="bi bi-clock-history"></i> <?= count($logs) ?> entrée(s)</div>
+    <div class="card-header"><i class="bi bi-clock-history"></i> <?= count($logs) ?> entree(s)</div>
     <div class="card-body p-0">
         <?php if (empty($logs)): ?>
             <p class="text-muted p-3 mb-0">Aucun log correspondant.</p>
         <?php else: ?>
             <div class="table-responsive">
                 <table class="table table-sm table-artec mb-0">
-                    <thead><tr><th>Date</th><th>Utilisateur</th><th>Rôle</th><th>Action</th><th>Entité</th><th>Détails</th></tr></thead>
+                    <thead><tr><th>Date</th><th>Utilisateur</th><th>Role</th><th>Action</th><th>Entite</th><th>Details</th></tr></thead>
                     <tbody>
                         <?php foreach ($logs as $l): ?>
                             <tr>
                                 <td><small><?= date('d/m/Y H:i:s', strtotime($l['created_at'])) ?></small></td>
-                                <td><?= e($l['user_nom'] ?? '—') ?></td>
-                                <td><?= $l['user_role'] ? '<span class="badge bg-secondary">' . e($l['user_role']) . '</span>' : '—' ?></td>
+                                <td><?= e($l['user_nom'] ?? '-') ?></td>
+                                <td><?= $l['user_role'] ? '<span class="badge bg-secondary">' . e($l['user_role']) . '</span>' : '-' ?></td>
                                 <td><span class="badge bg-info"><?= e($l['action']) ?></span></td>
                                 <td><small><?= e($l['entite'] ?? '') ?> <?= $l['entite_id'] ? '#' . (int) $l['entite_id'] : '' ?></small></td>
                                 <td><small><?= e(mb_substr($l['details'] ?? '', 0, 80)) ?></small></td>

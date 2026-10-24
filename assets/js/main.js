@@ -1,9 +1,4 @@
-// ============================================================
-// ARTEC Madagascar — Scripts généraux
-// ============================================================
-
 document.addEventListener('DOMContentLoaded', () => {
-    // Auto-fermeture des alertes après 5s
     document.querySelectorAll('.alert-dismissible').forEach(el => {
         setTimeout(() => {
             const alert = bootstrap.Alert.getOrCreateInstance(el);
@@ -11,11 +6,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 5000);
     });
 
-    // Active le lien de nav correspondant à l'URL
     const path = window.location.pathname;
     document.querySelectorAll('.artec-navbar .nav-link').forEach(link => {
-        if (link.getAttribute('href') && path.endsWith(link.getAttribute('href').split('/').pop())) {
+        const href = link.getAttribute('href');
+        if (href && !href.includes('#') && path.endsWith(href.split('/').pop())) {
             link.classList.add('active');
         }
+    });
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            const target = document.querySelector(this.getAttribute('href'));
+            if (target) {
+                e.preventDefault();
+                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        });
+    });
+
+    document.querySelectorAll('[data-confirm]').forEach(el => {
+        el.addEventListener('click', function (e) {
+            if (!confirm(this.dataset.confirm)) {
+                e.preventDefault();
+            }
+        });
     });
 });

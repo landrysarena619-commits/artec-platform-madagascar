@@ -1,7 +1,3 @@
-// ============================================================
-// ARTEC Madagascar — Messagerie instantanée (polling AJAX)
-// ============================================================
-
 class ArtectChat {
     constructor(opts) {
         this.apiSend      = opts.apiSend;
@@ -9,7 +5,7 @@ class ArtectChat {
         this.container    = document.getElementById(opts.container);
         this.form         = document.getElementById(opts.form);
         this.input        = document.getElementById(opts.input);
-        this.params       = opts.params;          // objet de query params (publication_id, operateur_id, visitor_token si opérateur)
+        this.params       = opts.params;
         this.csrfToken    = opts.csrfToken;
         this.pollInterval = opts.pollInterval || 3000;
         this.lastId       = 0;
@@ -70,7 +66,6 @@ class ArtectChat {
                 this.scrollToBottom();
             }
         } catch (err) {
-            // silencieux
         }
     }
 

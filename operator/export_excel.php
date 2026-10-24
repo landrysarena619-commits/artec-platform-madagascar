@@ -1,7 +1,4 @@
 <?php
-/**
- * Export CSV des avis de l'opérateur connecté.
- */
 require_once __DIR__ . '/../includes/auth.php';
 require_role('operateur');
 
@@ -26,10 +23,9 @@ header('Pragma: no-cache');
 header('Expires: 0');
 
 $out = fopen('php://output', 'w');
-// BOM UTF-8 pour Excel
 fwrite($out, "\xEF\xBB\xBF");
 
-fputcsv($out, ['ID', 'Note', 'Commentaire', 'Région', 'Service', 'Publication', 'Date']);
+fputcsv($out, ['ID', 'Note', 'Commentaire', 'Region', 'Service', 'Publication', 'Date']);
 foreach ($avis as $a) {
     fputcsv($out, [
         $a['id'],
@@ -43,5 +39,5 @@ foreach ($avis as $a) {
 }
 fclose($out);
 
-log_action('export_avis', 'avis', null, count($avis) . ' avis exportés en CSV');
+log_action('export_avis', 'avis', null, count($avis) . ' avis exportes en CSV');
 exit;

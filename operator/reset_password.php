@@ -1,21 +1,15 @@
 <?php
-/**
- * Réinitialisation du mot de passe via token.
- */
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../includes/functions.php';
 
-if (is_logged_in()) {
-    redirect(BASE_URL . 'visitor/index.php');
-}
+if (is_logged_in()) redirect(BASE_URL . 'visitor/index.php');
 
 $token = trim($_GET['token'] ?? $_POST['token'] ?? '');
 $errors = [];
 $success = false;
 $user = null;
 
-// Valider le token
 if ($token !== '') {
     $stmt = db()->prepare("
         SELECT pr.*, u.nom, u.email
@@ -30,21 +24,20 @@ if ($token !== '') {
     if ($reset) {
         $user = ['id' => (int) $reset['user_id'], 'nom' => $reset['nom'], 'email' => $reset['email']];
     } else {
-        $errors[] = 'Ce lien est invalide ou a expiré. Demandez un nouveau lien.';
+        $errors[] = 'Ce lien est invalide ou a expire. Demandez un nouveau lien.';
     }
 } else {
     $errors[] = 'Lien invalide.';
 }
 
-// Traitement du POST
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $user) {
     if (!verify_csrf($_POST['csrf_token'] ?? '')) {
-        $errors[] = 'Session expirée.';
+        $errors[] = 'Session expiree.';
     } else {
         $password = $_POST['password'] ?? '';
         $confirm  = $_POST['password_confirm'] ?? '';
 
-        if (strlen($password) < 8) $errors[] = 'Le mot de passe doit faire au moins 8 caractères.';
+        if (strlen($password) < 8) $errors[] = 'Le mot de passe doit faire au moins 8 caracteres.';
         if (!preg_match('/[A-Z]/', $password)) $errors[] = 'Une majuscule est requise.';
         if (!preg_match('/[a-z]/', $password)) $errors[] = 'Une minuscule est requise.';
         if (!preg_match('/[0-9]/', $password)) $errors[] = 'Un chiffre est requis.';
@@ -53,47 +46,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $user) {
         if (empty($errors)) {
             try {
                 $hash = password_hash($password, PASSWORD_BCRYPT);
-
-                // Mettre à jour le mot de passe
-                db()->prepare("UPDATE users SET password = ? WHERE id = ?")
-                    ->execute([$hash, $user['id']]);
-
-                // Marquer le token comme utilisé
-                db()->prepare("UPDATE password_resets SET used = 1 WHERE token = ?")
-                    ->execute([$token]);
-
-                // Invalider les autres tokens
-                db()->prepare("UPDATE password_resets SET used = 1 WHERE user_id = ? AND used = 0")
-                    ->execute([$user['id']]);
-
-                log_action('reset_password', 'users', $user['id'], 'Mot de passe réinitialisé');
+                db()->prepare("UPDATE users SET password = ? WHERE id = ?")->execute([$hash, $user['id']]);
+                db()->prepare("UPDATE password_resets SET used = 1 WHERE token = ?")->execute([$token]);
+                db()->prepare("UPDATE password_resets SET used = 1 WHERE user_id = ? AND used = 0")->execute([$user['id']]);
+                log_action('reset_password', 'users', $user['id'], 'Mot de passe reinitialise');
                 $success = true;
-            } catch (Throwable $e) {
-                error_log('reset_password error: ' . $e->getMessage());
-                $errors[] = 'Erreur technique. Réessayez.';
+            } catch (Throwable $ex) {
+                error_log('reset error: ' . $ex->getMessage());
+                $errors[] = 'Erreur technique. Reessayez.';
             }
         }
     }
 }
 
-$pageTitle = 'Réinitialiser le mot de passe';
+$pageTitle = 'Reinitialisation';
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
-<div class="row justify-content-center py-4">
-    <div class="col-md-5 col-lg-4">
-        <div class="card card-artec">
-            <div class="card-header text-center py-3">
-                <i class="bi bi-shield-lock fs-2"></i>
-                <h4 class="mb-0 mt-2">Nouveau mot de passe</h4>
+<div class="row justify-content-center align-items-center py-4" style="min-height: 70vh;">
+    <div class="col-md-6 col-lg-5 col-xl-4">
+        <div class="card card-artec fade-in">
+            <div class="card-header text-center py-4">
+                <div class="mb-2" style="font-size: 2.5rem;"><i class="bi bi-shield-lock"></i></div>
+                <h4 class="mb-0">Nouveau mot de passe</h4>
             </div>
             <div class="card-body p-4">
 
                 <?php if ($success): ?>
                     <div class="alert alert-success">
                         <i class="bi bi-check-circle-fill"></i>
-                        <strong>Mot de passe modifié avec succès !</strong><br>
-                        Vous pouvez maintenant vous connecter.
+                        <div>
+                            <strong>Mot de passe modifie.</strong><br>
+                            Vous pouvez maintenant vous connecter.
+                        </div>
                     </div>
                     <a href="<?= e(BASE_URL) ?>operator/login.php" class="btn btn-artec w-100">
                         <i class="bi bi-box-arrow-in-right"></i> Se connecter
@@ -129,19 +114,15 @@ require_once __DIR__ . '/../includes/header.php';
                         <input type="hidden" name="token" value="<?= e($token) ?>">
 
                         <div class="mb-3">
-                            <label class="form-label fw-bold">Nouveau mot de passe *</label>
+                            <label class="form-label">Nouveau mot de passe *</label>
                             <input type="password" name="password" id="password" class="form-control" required minlength="8" autofocus>
-                            <div class="form-text">
-                                Min. 8 caractères, dont 1 majuscule, 1 minuscule et 1 chiffre.
-                            </div>
+                            <div class="form-text">Min. 8 caracteres, dont 1 majuscule, 1 minuscule et 1 chiffre.</div>
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label fw-bold">Confirmer *</label>
+                            <label class="form-label">Confirmer *</label>
                             <input type="password" name="password_confirm" id="password_confirm" class="form-control" required>
-                            <div class="form-text text-danger d-none" id="matchError">
-                                Les mots de passe ne correspondent pas.
-                            </div>
+                            <div class="form-text text-danger d-none" id="matchError">Ne correspondent pas.</div>
                         </div>
 
                         <button type="submit" class="btn btn-artec w-100">

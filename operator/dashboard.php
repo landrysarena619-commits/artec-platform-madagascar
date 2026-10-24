@@ -1,14 +1,10 @@
 <?php
-/**
- * Tableau de bord opérateur.
- */
 require_once __DIR__ . '/../includes/auth.php';
 require_role('operateur');
 
 $user = current_user();
 $opId = $user['operateur_id'];
 
-// --- KPI ---
 $kpi = db()->prepare("
     SELECT
         (SELECT COUNT(*) FROM publications WHERE operateur_id = ?) AS nb_pub,
@@ -19,7 +15,6 @@ $kpi = db()->prepare("
 $kpi->execute([$opId, $opId, $opId, $opId]);
 $k = $kpi->fetch();
 
-// --- Dernières publications ---
 $stmt = db()->prepare("
     SELECT p.*, (SELECT COUNT(*) FROM avis WHERE publication_id = p.id) AS nb_avis
     FROM publications p
@@ -30,7 +25,6 @@ $stmt = db()->prepare("
 $stmt->execute([$opId]);
 $recentPubs = $stmt->fetchAll();
 
-// --- Derniers avis ---
 $stmt = db()->prepare("
     SELECT a.*, p.titre AS pub_titre
     FROM avis a
@@ -42,7 +36,6 @@ $stmt = db()->prepare("
 $stmt->execute([$opId]);
 $recentAvis = $stmt->fetchAll();
 
-// --- Évolution des notes (7 derniers jours) ---
 $stmt = db()->prepare("
     SELECT DATE(created_at) AS jour, ROUND(AVG(note),1) AS moyenne, COUNT(*) AS nb
     FROM avis
@@ -53,7 +46,7 @@ $stmt = db()->prepare("
 $stmt->execute([$opId]);
 $evolution = $stmt->fetchAll();
 
-$pageTitle = 'Dashboard Opérateur';
+$pageTitle = 'Dashboard Operateur';
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
@@ -62,14 +55,13 @@ require_once __DIR__ . '/../includes/header.php';
         <h1 class="fw-bold mb-1">
             <span class="badge-operateur badge-<?= e($user['operateur_slug']) ?>"><?= e($user['operateur_nom']) ?></span>
         </h1>
-        <p class="text-muted mb-0">Bienvenue, <?= e($user['nom']) ?> 👋</p>
+        <p class="text-muted mb-0">Bienvenue, <?= e($user['nom']) ?></p>
     </div>
     <a href="<?= e(BASE_URL) ?>operator/publication_edit.php" class="btn btn-artec">
         <i class="bi bi-plus-circle"></i> Nouvelle publication
     </a>
 </div>
 
-<!-- ===== KPI ===== -->
 <div class="row g-3 mb-4">
     <div class="col-md-3">
         <div class="kpi-card">
@@ -80,7 +72,7 @@ require_once __DIR__ . '/../includes/header.php';
     <div class="col-md-3">
         <div class="kpi-card kpi-orange">
             <div class="kpi-value"><?= (int) $k['nb_avis'] ?></div>
-            <div class="kpi-label"><i class="bi bi-star"></i> Avis reçus</div>
+            <div class="kpi-label"><i class="bi bi-star"></i> Avis recus</div>
         </div>
     </div>
     <div class="col-md-3">
@@ -92,23 +84,21 @@ require_once __DIR__ . '/../includes/header.php';
     <div class="col-md-3">
         <div class="kpi-card kpi-airtel">
             <div class="kpi-value"><?= (int) $k['nb_reclam'] ?></div>
-            <div class="kpi-label"><i class="bi bi-exclamation-circle"></i> Réclamations</div>
+            <div class="kpi-label"><i class="bi bi-exclamation-circle"></i> Reclamations</div>
         </div>
     </div>
 </div>
 
 <div class="row g-4">
-    <!-- ===== Évolution ===== -->
     <div class="col-lg-8">
         <div class="card card-artec">
-            <div class="card-header"><i class="bi bi-graph-up-arrow"></i> Évolution des notes (7 derniers jours)</div>
+            <div class="card-header"><i class="bi bi-graph-up-arrow"></i> Evolution des notes (7 derniers jours)</div>
             <div class="card-body">
                 <canvas id="evoChart" height="100"></canvas>
             </div>
         </div>
     </div>
 
-    <!-- ===== Derniers avis ===== -->
     <div class="col-lg-4">
         <div class="card card-artec h-100">
             <div class="card-header"><i class="bi bi-chat-quote"></i> Derniers avis</div>
@@ -132,11 +122,11 @@ require_once __DIR__ . '/../includes/header.php';
                                 </div>
                                 <div class="small mt-1">
                                     <strong><?= (int) $a['note'] ?>/10</strong>
-                                    · <?= e($a['region']) ?>
+                                    - <?= e($a['region']) ?>
                                 </div>
                                 <?php if ($a['commentaire']): ?>
                                     <p class="small mb-0 text-muted mt-1">
-                                        <?= e(mb_substr($a['commentaire'], 0, 80)) ?>…
+                                        <?= e(mb_substr($a['commentaire'], 0, 80)) ?>...
                                     </p>
                                 <?php endif; ?>
                             </li>
@@ -148,15 +138,14 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 </div>
 
-<!-- ===== Publications récentes ===== -->
 <div class="card card-artec mt-4">
     <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-megaphone"></i> Mes publications récentes</span>
+        <span><i class="bi bi-megaphone"></i> Mes publications recentes</span>
         <a href="<?= e(BASE_URL) ?>operator/publications.php" class="btn btn-sm btn-light">Tout voir</a>
     </div>
     <div class="card-body p-0">
         <?php if (empty($recentPubs)): ?>
-            <p class="text-muted p-3 mb-0">Aucune publication encore. <a href="<?= e(BASE_URL) ?>operator/publication_edit.php">Créer la première</a>.</p>
+            <p class="text-muted p-3 mb-0">Aucune publication encore. <a href="<?= e(BASE_URL) ?>operator/publication_edit.php">Creer la premiere</a>.</p>
         <?php else: ?>
             <div class="table-responsive">
                 <table class="table table-artec mb-0">
@@ -176,7 +165,7 @@ require_once __DIR__ . '/../includes/header.php';
                                 <td><span class="badge bg-secondary"><?= e(ucfirst($p['type'])) ?></span></td>
                                 <td>
                                     <?php if ($p['publie']): ?>
-                                        <span class="badge bg-success">Publié</span>
+                                        <span class="badge bg-success">Publie</span>
                                     <?php else: ?>
                                         <span class="badge bg-warning text-dark">Brouillon</span>
                                     <?php endif; ?>
@@ -198,7 +187,6 @@ require_once __DIR__ . '/../includes/header.php';
 </div>
 
 <script>
-// Graphique évolution
 const evoCtx = document.getElementById('evoChart');
 if (evoCtx) {
     new Chart(evoCtx, {

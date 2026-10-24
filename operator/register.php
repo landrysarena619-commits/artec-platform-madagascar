@@ -1,9 +1,4 @@
 <?php
-/**
- * Création de compte opérateur.
- * Seuls les comptes opérateur peuvent être créés ici.
- * Les comptes ARTEC et admin sont créés par l'administrateur.
- */
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../includes/functions.php';
@@ -14,13 +9,11 @@ if (is_logged_in()) {
 
 $errors = [];
 $success = false;
-
-// Liste des opérateurs disponibles
 $operateurs = db()->query("SELECT id, nom FROM operateurs WHERE actif = 1 ORDER BY nom")->fetchAll();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf($_POST['csrf_token'] ?? '')) {
-        $errors[] = 'Session expirée. Rechargez la page.';
+        $errors[] = 'Session expiree. Rechargez la page.';
     } else {
         $nom         = trim($_POST['nom'] ?? '');
         $email       = trim(strtolower($_POST['email'] ?? ''));
@@ -29,36 +22,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password    = $_POST['password'] ?? '';
         $confirm     = $_POST['password_confirm'] ?? '';
 
-        // Validations
-        if ($nom === '') $errors[] = 'Le nom est obligatoire.';
-        if (mb_strlen($nom) < 3) $errors[] = 'Le nom doit faire au moins 3 caractères.';
+        if (mb_strlen($nom) < 3) $errors[] = 'Le nom doit faire au moins 3 caracteres.';
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = 'Email invalide.';
-        if ($operateurId <= 0) $errors[] = 'Veuillez choisir votre opérateur.';
-        if (strlen($password) < 8) $errors[] = 'Le mot de passe doit faire au moins 8 caractères.';
+        if ($operateurId <= 0) $errors[] = 'Veuillez choisir votre operateur.';
+        if (strlen($password) < 8) $errors[] = 'Le mot de passe doit faire au moins 8 caracteres.';
         if (!preg_match('/[A-Z]/', $password)) $errors[] = 'Le mot de passe doit contenir une majuscule.';
         if (!preg_match('/[a-z]/', $password)) $errors[] = 'Le mot de passe doit contenir une minuscule.';
         if (!preg_match('/[0-9]/', $password)) $errors[] = 'Le mot de passe doit contenir un chiffre.';
         if ($password !== $confirm) $errors[] = 'Les mots de passe ne correspondent pas.';
 
-        // Email unique ?
         if (empty($errors)) {
             $stmt = db()->prepare("SELECT id FROM users WHERE email = ?");
             $stmt->execute([$email]);
-            if ($stmt->fetch()) {
-                $errors[] = 'Cet email est déjà utilisé.';
-            }
+            if ($stmt->fetch()) $errors[] = 'Cet email est deja utilise.';
         }
 
-        // Vérifier que l'opérateur existe
         if (empty($errors)) {
             $stmt = db()->prepare("SELECT id FROM operateurs WHERE id = ? AND actif = 1");
             $stmt->execute([$operateurId]);
-            if (!$stmt->fetch()) {
-                $errors[] = 'Opérateur invalide.';
-            }
+            if (!$stmt->fetch()) $errors[] = 'Operateur invalide.';
         }
 
-        // Création
         if (empty($errors)) {
             try {
                 $hash = password_hash($password, PASSWORD_BCRYPT);
@@ -67,44 +51,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     VALUES (?, ?, ?, 'operateur', ?, ?, 1)
                 ");
                 $stmt->execute([$nom, $email, $hash, $operateurId, $telephone ?: null]);
-
-                log_action('register', 'users', (int) db()->lastInsertId(), "Nouveau compte opérateur : $email");
-
+                log_action('register', 'users', (int) db()->lastInsertId(), "Nouveau compte : $email");
                 $success = true;
-            } catch (Throwable $e) {
-                error_log('register error: ' . $e->getMessage());
-                $errors[] = 'Erreur technique. Réessayez.';
+            } catch (Throwable $ex) {
+                error_log('register error: ' . $ex->getMessage());
+                $errors[] = 'Erreur technique. Reessayez.';
             }
         }
     }
 }
 
-$pageTitle = 'Créer un compte';
+$pageTitle = 'Creer un compte';
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
 <div class="row justify-content-center py-4">
-    <div class="col-md-6 col-lg-5">
-        <div class="card card-artec">
-            <div class="card-header text-center py-3">
-                <i class="bi bi-person-plus fs-2"></i>
-                <h4 class="mb-0 mt-2">Créer un compte opérateur</h4>
+    <div class="col-md-7 col-lg-6">
+        <div class="card card-artec fade-in">
+            <div class="card-header text-center py-4">
+                <div class="mb-2" style="font-size: 2.5rem;"><i class="bi bi-person-plus"></i></div>
+                <h4 class="mb-0">Creer un compte operateur</h4>
+                <p class="mb-0 small opacity-75">Rejoignez la plateforme ARTEC Madagascar</p>
             </div>
             <div class="card-body p-4">
 
                 <?php if ($success): ?>
                     <div class="alert alert-success">
                         <i class="bi bi-check-circle-fill"></i>
-                        <strong>Compte créé avec succès !</strong><br>
-                        Vous pouvez maintenant vous connecter.
+                        <div>
+                            <strong>Compte cree avec succes.</strong><br>
+                            Vous pouvez maintenant vous connecter.
+                        </div>
                     </div>
                     <a href="<?= e(BASE_URL) ?>operator/login.php" class="btn btn-artec w-100">
-                        <i class="bi bi-box-arrow-in-right"></i> Aller à la connexion
+                        <i class="bi bi-box-arrow-in-right"></i> Aller a la connexion
                     </a>
+
                 <?php else: ?>
+
+                    <div class="alert alert-info small">
+                        <i class="bi bi-info-circle"></i>
+                        Ce formulaire cree un compte <strong>operateur</strong>. Les comptes ARTEC et administrateur sont crees par l'administrateur.
+                    </div>
 
                     <?php if ($errors): ?>
                         <div class="alert alert-danger">
+                            <i class="bi bi-exclamation-triangle-fill"></i>
                             <ul class="mb-0">
                                 <?php foreach ($errors as $err): ?>
                                     <li><?= e($err) ?></li>
@@ -113,74 +105,66 @@ require_once __DIR__ . '/../includes/header.php';
                         </div>
                     <?php endif; ?>
 
-                    <p class="text-muted small mb-3">
-                        <i class="bi bi-info-circle"></i>
-                        Ce formulaire crée un compte <strong>opérateur</strong>.
-                        Les comptes ARTEC et administrateur sont créés par l'administrateur de la plateforme.
-                    </p>
-
                     <form method="post" autocomplete="off">
                         <?= csrf_field() ?>
 
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">Nom complet *</label>
-                            <input type="text" name="nom" class="form-control" required minlength="3"
-                                   value="<?= e($_POST['nom'] ?? '') ?>"
-                                   placeholder="Ex: Rakoto Andry">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Nom complet *</label>
+                                <input type="text" name="nom" class="form-control" required minlength="3"
+                                       value="<?= e($_POST['nom'] ?? '') ?>"
+                                       placeholder="Rakoto Andry">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Email *</label>
+                                <input type="email" name="email" class="form-control" required
+                                       value="<?= e($_POST['email'] ?? '') ?>"
+                                       placeholder="vous@operateur.mg">
+                            </div>
                         </div>
 
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">Email professionnel *</label>
-                            <input type="email" name="email" class="form-control" required
-                                   value="<?= e($_POST['email'] ?? '') ?>"
-                                   placeholder="vous@operateur.mg">
+                        <div class="row g-3 mt-1">
+                            <div class="col-md-6">
+                                <label class="form-label">Telephone</label>
+                                <input type="text" name="telephone" class="form-control"
+                                       value="<?= e($_POST['telephone'] ?? '') ?>"
+                                       placeholder="+261 34 00 000 00">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Operateur *</label>
+                                <select name="operateur_id" class="form-select" required>
+                                    <option value="">-- Choisir --</option>
+                                    <?php foreach ($operateurs as $op): ?>
+                                        <option value="<?= (int) $op['id'] ?>"
+                                            <?= (int) ($_POST['operateur_id'] ?? 0) === (int) $op['id'] ? 'selected' : '' ?>>
+                                            <?= e($op['nom']) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
                         </div>
 
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">Téléphone</label>
-                            <input type="text" name="telephone" class="form-control"
-                                   value="<?= e($_POST['telephone'] ?? '') ?>"
-                                   placeholder="+261 34 00 000 00">
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">Opérateur *</label>
-                            <select name="operateur_id" class="form-select" required>
-                                <option value="">— Choisir votre opérateur —</option>
-                                <?php foreach ($operateurs as $op): ?>
-                                    <option value="<?= (int) $op['id'] ?>"
-                                        <?= (int) ($_POST['operateur_id'] ?? 0) === (int) $op['id'] ? 'selected' : '' ?>>
-                                        <?= e($op['nom']) ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">Mot de passe *</label>
+                        <div class="mt-3">
+                            <label class="form-label">Mot de passe *</label>
                             <input type="password" name="password" id="password" class="form-control" required minlength="8">
-                            <div class="form-text">
-                                Min. 8 caractères, dont 1 majuscule, 1 minuscule et 1 chiffre.
-                            </div>
+                            <div class="form-text">Min. 8 caracteres, dont 1 majuscule, 1 minuscule et 1 chiffre.</div>
                         </div>
 
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">Confirmer le mot de passe *</label>
+                        <div class="mt-3">
+                            <label class="form-label">Confirmer le mot de passe *</label>
                             <input type="password" name="password_confirm" id="password_confirm" class="form-control" required>
-                            <div class="form-text text-danger d-none" id="matchError">
-                                Les mots de passe ne correspondent pas.
-                            </div>
+                            <div class="form-text text-danger d-none" id="matchError">Les mots de passe ne correspondent pas.</div>
                         </div>
 
-                        <button type="submit" class="btn btn-artec w-100">
-                            <i class="bi bi-person-check"></i> Créer mon compte
+                        <button type="submit" class="btn btn-artec w-100 mt-4">
+                            <i class="bi bi-person-check"></i> Creer mon compte
                         </button>
                     </form>
 
                     <hr class="my-4">
 
                     <div class="text-center small">
-                        Vous avez déjà un compte ?
+                        Vous avez deja un compte ?
                         <a href="<?= e(BASE_URL) ?>operator/login.php" class="fw-bold">Se connecter</a>
                     </div>
                 <?php endif; ?>
@@ -190,7 +174,6 @@ require_once __DIR__ . '/../includes/header.php';
 </div>
 
 <script>
-// Vérification live de la correspondance des mots de passe
 const p1 = document.getElementById('password');
 const p2 = document.getElementById('password_confirm');
 const err = document.getElementById('matchError');

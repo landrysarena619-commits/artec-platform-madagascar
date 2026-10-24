@@ -1,58 +1,111 @@
-from __future__ import annotations
-
-import pandas as pd
 import mysql.connector
+import pandas as pd
+from config import DB_CONFIG, SEUIL_SATISFACTION
 
-from config import DB_CONFIG
+
+def get_connection():
+    return mysql.connector.connect(**DB_CONFIG)
 
 
-def load_reviews() -> pd.DataFrame:
+def load_avis():
     query = """
-        SELECT r.id, r.operator_code, r.rating, r.comment, r.region, r.service,
-               EXISTS (SELECT 1 FROM complaints c WHERE c.review_id = r.id) AS has_complaint
-        FROM reviews r
-        WHERE r.status = 'published'
-        ORDER BY r.created_at ASC
+        SELECT
+            a.id,
+            a.operateur_id,
+            a.note,
+            a.commentaire,
+            a.region,
+            a.service,
+            a.created_at,
+            o.nom AS operateur_nom,
+            o.slug AS operateur_slug
+        FROM avis a
+        INNER JOIN operateurs o ON o.id = a.operateur_id
+        WHERE a.publie = 1
     """
-    connection = mysql.connector.connect(**DB_CONFIG)
+    conn = get_connection()
     try:
-        cursor = connection.cursor(dictionary=True)
-        cursor.execute(query)
-        rows = cursor.fetchall()
-        cursor.close()
-        return pd.DataFrame(rows)
+        df = pd.read_sql(query, conn)
     finally:
-        connection.close()
+        conn.close()
+
+    df['note'] = df['note'].astype(int)
+    df['commentaire'] = df['commentaire'].fillna('')
+    df['satisfait'] = (df['note'] >= SEUIL_SATISFACTION).astype(int)
+    return df
 
 
-def load_recent_reviews(operator_code: str, limit: int = 500) -> pd.DataFrame:
+def load_operateurs():
+    query = "SELECT id, nom, slug FROM operateurs WHERE actif = 1"
+    conn = get_connection()
+    try:
+        return pd.read_sql(query, conn)
+    finally:
+        conn.close()
+
+
+def load_stats_par_operateur():
     query = """
-        SELECT id, operator_code, rating, comment, region, service
-        FROM reviews
-        WHERE status = 'published' AND operator_code = %s
-        ORDER BY created_at DESC
-        LIMIT %s
+        SELECT
+            o.id AS operateur_id,
+            o.nom AS operateur_nom,
+            COUNT(a.id) AS nb_avis,
+            COALESCE(AVG(a.note), 0) AS note_moyenne,
+            SUM(CASE WHEN a.note >= 7 THEN 1 ELSE 0 END) AS nb_satisfaits,
+            SUM(CASE WHEN a.note <= 3 THEN 1 ELSE 0 END) AS nb_insatisfaits,
+            SUM(CASE WHEN a.note BETWEEN 4 AND 6 THEN 1 ELSE 0 END) AS nb_neutres,
+            (SELECT COUNT(*) FROM reclamations r WHERE r.operateur_id = o.id AND r.statut IN ('nouveau','en_cours')) AS nb_reclamations_ouvertes,
+            (SELECT COUNT(*) FROM decisions d WHERE d.operateur_id = o.id AND d.statut IN ('ouverte','en_cours')) AS nb_decisions_ouvertes
+        FROM operateurs o
+        LEFT JOIN avis a ON a.operateur_id = o.id AND a.publie = 1
+        WHERE o.actif = 1
+        GROUP BY o.id
     """
-    connection = mysql.connector.connect(**DB_CONFIG)
+    conn = get_connection()
     try:
-        cursor = connection.cursor(dictionary=True)
-        cursor.execute(query, (operator_code, limit))
-        frame = pd.DataFrame(cursor.fetchall())
-        cursor.close()
-        if not frame.empty:
-            frame = frame.iloc[::-1].reset_index(drop=True)
-        return frame
+        return pd.read_sql(query, conn)
     finally:
-        connection.close()
+        conn.close()
 
 
-def load_training_threshold(default: int) -> int:
-    connection = mysql.connector.connect(**DB_CONFIG)
+def save_predictions(predictions):
+    if not predictions:
+        return 0
+
+    query = """
+        INSERT INTO predictions
+        (operateur_id, type_prediction, valeur, label, score_confiance, details, modele_version)
+        VALUES (%(operateur_id)s, %(type_prediction)s, %(valeur)s, %(label)s,
+                %(score_confiance)s, %(details)s, %(modele_version)s)
+    """
+    conn = get_connection()
     try:
-        cursor = connection.cursor()
-        cursor.execute("SELECT setting_value FROM settings WHERE setting_key = 'minimum_reviews_for_training'")
-        row = cursor.fetchone()
+        cursor = conn.cursor()
+        cursor.executemany(query, predictions)
+        conn.commit()
+        count = cursor.rowcount
         cursor.close()
-        return int(row[0]) if row else default
+        return count
     finally:
-        connection.close()
+        conn.close()
+
+
+def save_model_metadata(nom, version, type_, fichier, accuracy=None, rmse=None):
+    query = """
+        INSERT INTO ml_models
+        (nom_modele, version, type, fichier, score_accuracy, score_rmse, actif)
+        VALUES (%s, %s, %s, %s, %s, %s, 1)
+        ON DUPLICATE KEY UPDATE
+            fichier = VALUES(fichier),
+            score_accuracy = VALUES(score_accuracy),
+            score_rmse = VALUES(score_rmse),
+            date_entrainement = CURRENT_TIMESTAMP
+    """
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(query, (nom, version, type_, fichier, accuracy, rmse))
+        conn.commit()
+        cursor.close()
+    finally:
+        conn.close()

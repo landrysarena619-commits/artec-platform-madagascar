@@ -1,11 +1,7 @@
 <?php
-/**
- * Dashboard comparatif ARTEC.
- */
 require_once __DIR__ . '/../includes/auth.php';
 require_role('artec');
 
-// --- Comparatif par opérateur ---
 $stmt = db()->query("
     SELECT
         o.id, o.nom, o.slug, o.couleur,
@@ -20,41 +16,31 @@ $stmt = db()->query("
 ");
 $operateurs = $stmt->fetchAll();
 
-// --- Avis signalés à modérer ---
-$stmt = db()->query("
-    SELECT COUNT(*) FROM avis WHERE signale = 1 AND modere = 0
-");
-$avisSignales = (int) $stmt->fetchColumn();
+$avisSignales = (int) db()->query("SELECT COUNT(*) FROM avis WHERE signale = 1 AND modere = 0")->fetchColumn();
 
-// --- Réclamations récentes ---
-$stmt = db()->query("
+$reclamations = db()->query("
     SELECT r.*, o.nom AS op_nom, o.slug AS op_slug
     FROM reclamations r
     INNER JOIN operateurs o ON o.id = r.operateur_id
     ORDER BY r.created_at DESC
     LIMIT 5
-");
-$reclamations = $stmt->fetchAll();
+")->fetchAll();
 
-// --- Décisions récentes ---
-$stmt = db()->query("
+$decisions = db()->query("
     SELECT d.*, o.nom AS op_nom, o.slug AS op_slug
     FROM decisions d
     INNER JOIN operateurs o ON o.id = d.operateur_id
     ORDER BY d.created_at DESC
     LIMIT 5
-");
-$decisions = $stmt->fetchAll();
+")->fetchAll();
 
-// --- Prédictions récentes (si Python a tourné) ---
-$stmt = db()->query("
+$predictions = db()->query("
     SELECT p.*, o.nom AS op_nom
     FROM predictions p
     INNER JOIN operateurs o ON o.id = p.operateur_id
     ORDER BY p.date_prediction DESC
     LIMIT 6
-");
-$predictions = $stmt->fetchAll();
+")->fetchAll();
 
 $pageTitle = 'Dashboard ARTEC';
 require_once __DIR__ . '/../includes/header.php';
@@ -63,16 +49,15 @@ require_once __DIR__ . '/../includes/header.php';
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <div>
         <h1 class="fw-bold mb-1"><i class="bi bi-shield-check text-artec"></i> Dashboard ARTEC</h1>
-        <p class="text-muted mb-0">Vue d'ensemble de la régulation des télécoms</p>
+        <p class="text-muted mb-0">Vue d'ensemble de la regulation des telecoms</p>
     </div>
     <?php if ($avisSignales > 0): ?>
         <a href="<?= e(BASE_URL) ?>artec/avis_moderation.php" class="btn btn-warning">
-            <i class="bi bi-flag-fill"></i> <?= $avisSignales ?> avis signalé(s)
+            <i class="bi bi-flag-fill"></i> <?= $avisSignales ?> avis signale(s)
         </a>
     <?php endif; ?>
 </div>
 
-<!-- ============ COMPARATIF OPÉRATEURS ============ -->
 <div class="row g-3 mb-4">
     <?php foreach ($operateurs as $op): ?>
         <div class="col-md-4">
@@ -92,12 +77,12 @@ require_once __DIR__ . '/../includes/header.php';
                     <div class="row g-2 small">
                         <div class="col-6"><i class="bi bi-megaphone text-primary"></i> <strong><?= (int) $op['nb_pub'] ?></strong> publications</div>
                         <div class="col-6"><i class="bi bi-star text-warning"></i> <strong><?= (int) $op['nb_avis'] ?></strong> avis</div>
-                        <div class="col-6"><i class="bi bi-exclamation-circle text-danger"></i> <strong><?= (int) $op['nb_reclam'] ?></strong> réclam.</div>
-                        <div class="col-6"><i class="bi bi-shield-exclamation text-warning"></i> <strong><?= (int) $op['nb_decision'] ?></strong> décisions</div>
+                        <div class="col-6"><i class="bi bi-exclamation-circle text-danger"></i> <strong><?= (int) $op['nb_reclam'] ?></strong> reclam.</div>
+                        <div class="col-6"><i class="bi bi-shield-exclamation text-warning"></i> <strong><?= (int) $op['nb_decision'] ?></strong> decisions</div>
                     </div>
                     <a href="<?= e(BASE_URL) ?>artec/operateurs.php?id=<?= (int) $op['id'] ?>"
                        class="btn btn-sm btn-outline-primary w-100 mt-3">
-                        Voir le détail <i class="bi bi-arrow-right"></i>
+                        Voir le detail <i class="bi bi-arrow-right"></i>
                     </a>
                 </div>
             </div>
@@ -106,7 +91,6 @@ require_once __DIR__ . '/../includes/header.php';
 </div>
 
 <div class="row g-4">
-    <!-- ===== GRAPHIQUE COMPARATIF ===== -->
     <div class="col-lg-8">
         <div class="card card-artec">
             <div class="card-header"><i class="bi bi-bar-chart"></i> Comparaison des notes moyennes</div>
@@ -114,15 +98,14 @@ require_once __DIR__ . '/../includes/header.php';
         </div>
     </div>
 
-    <!-- ===== PRÉDICTIONS ML ===== -->
     <div class="col-lg-4">
         <div class="card card-artec h-100">
-            <div class="card-header"><i class="bi bi-cpu"></i> Prédictions ML récentes</div>
+            <div class="card-header"><i class="bi bi-cpu"></i> Predictions ML recentes</div>
             <div class="card-body p-0">
                 <?php if (empty($predictions)): ?>
                     <div class="p-3 text-muted small">
-                        Aucune prédiction disponible.<br>
-                        <em>Lance <code>python predict.py</code> pour générer.</em>
+                        Aucune prediction disponible.<br>
+                        Lance <code>python predict.py</code> pour generer.
                     </div>
                 <?php else: ?>
                     <ul class="list-group list-group-flush">
@@ -131,7 +114,7 @@ require_once __DIR__ . '/../includes/header.php';
                                 <strong><?= e($p['op_nom']) ?></strong>
                                 <span class="badge bg-info"><?= e($p['type_prediction']) ?></span><br>
                                 Valeur : <strong><?= number_format((float) $p['valeur'], 2) ?></strong>
-                                <?php if ($p['label']): ?> · <?= e($p['label']) ?><?php endif; ?>
+                                <?php if ($p['label']): ?> - <?= e($p['label']) ?><?php endif; ?>
                             </li>
                         <?php endforeach; ?>
                     </ul>
@@ -141,14 +124,13 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 </div>
 
-<!-- ============ RÉCLAMATIONS + DÉCISIONS ============ -->
 <div class="row g-4 mt-3">
     <div class="col-lg-6">
         <div class="card card-artec h-100">
-            <div class="card-header"><i class="bi bi-exclamation-circle"></i> Réclamations récentes</div>
+            <div class="card-header"><i class="bi bi-exclamation-circle"></i> Reclamations recentes</div>
             <div class="card-body p-0">
                 <?php if (empty($reclamations)): ?>
-                    <p class="text-muted p-3 mb-0">Aucune réclamation.</p>
+                    <p class="text-muted p-3 mb-0">Aucune reclamation.</p>
                 <?php else: ?>
                     <ul class="list-group list-group-flush">
                         <?php foreach ($reclamations as $r): ?>
@@ -172,12 +154,12 @@ require_once __DIR__ . '/../includes/header.php';
     <div class="col-lg-6">
         <div class="card card-artec h-100">
             <div class="card-header d-flex justify-content-between">
-                <span><i class="bi bi-shield-exclamation"></i> Décisions récentes</span>
-                <a href="<?= e(BASE_URL) ?>artec/decisions.php" class="btn btn-sm btn-light">Gérer</a>
+                <span><i class="bi bi-shield-exclamation"></i> Decisions recentes</span>
+                <a href="<?= e(BASE_URL) ?>artec/decisions.php" class="btn btn-sm btn-light">Gerer</a>
             </div>
             <div class="card-body p-0">
                 <?php if (empty($decisions)): ?>
-                    <p class="text-muted p-3 mb-0">Aucune décision.</p>
+                    <p class="text-muted p-3 mb-0">Aucune decision.</p>
                 <?php else: ?>
                     <ul class="list-group list-group-flush">
                         <?php foreach ($decisions as $d): ?>

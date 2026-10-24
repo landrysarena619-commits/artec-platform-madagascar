@@ -5,6 +5,7 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/alertes_functions.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_response(['success' => false, 'message' => 'Méthode non autorisée.'], 405);
@@ -27,7 +28,18 @@ if (!in_array($categorie, ['reseau', 'facturation', 'service_client', 'offre_non
 }
 
 try {
-    $stmt = db()->prepare("
+    $pdo = db();
+    $stmt = $pdo->prepare("
+        SELECT id FROM publications
+        WHERE id = ? AND operateur_id = ? AND publie = 1
+    ");
+    $stmt->execute([$publicationId, $operateurId]);
+    if (!$stmt->fetch()) {
+        json_response(['success' => false, 'message' => 'Publication introuvable.'], 404);
+    }
+
+    $pdo->beginTransaction();
+    $stmt = $pdo->prepare("
         INSERT INTO reclamations (operateur_id, publication_id, visitor_token, sujet, description, categorie, statut)
         VALUES (?, ?, ?, ?, ?, ?, 'nouveau')
     ");
@@ -40,10 +52,29 @@ try {
         $categorie,
     ]);
 
-    log_action('signaler_probleme', 'reclamations', (int) db()->lastInsertId(), "Sujet : $sujet");
+    $reclamationId = (int) $pdo->lastInsertId();
+    log_action('signaler_probleme', 'reclamations', $reclamationId, "Sujet : $sujet");
 
-    json_response(['success' => true, 'message' => 'Votre signalement a été transmis. Merci.']);
+    $notificationEnvoyee = envoyer_message_alerte(
+        $operateurId,
+        "Nouveau signalement : \"$sujet\" (categorie : $categorie). Description : $description",
+        'haute'
+    );
+    verifier_operateur_alertes($operateurId);
+    $pdo->commit();
+
+    $message = $notificationEnvoyee
+        ? 'Votre signalement a été transmis et une alerte de l’ARTEC a été envoyée à l’opérateur.'
+        : 'Votre signalement a été enregistré, mais l’alerte automatique n’a pas pu être envoyée. Contactez l’ARTEC.';
+    json_response([
+        'success' => true,
+        'message' => $message,
+        'notification_sent' => $notificationEnvoyee,
+    ]);
 } catch (Throwable $e) {
+    if (isset($pdo) && $pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     error_log('signaler_probleme error: ' . $e->getMessage());
     json_response(['success' => false, 'message' => 'Erreur technique.'], 500);
 }

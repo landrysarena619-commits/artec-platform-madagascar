@@ -2,7 +2,6 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_role('artec');
 
-// --- Export CSV global (tous opérateurs) ---
 if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     $stmt = db()->query("
         SELECT
@@ -23,7 +22,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     header('Content-Disposition: attachment; filename="rapport_artec_' . date('Ymd_His') . '.csv"');
     $out = fopen('php://output', 'w');
     fwrite($out, "\xEF\xBB\xBF");
-    fputcsv($out, ['Opérateur', 'Nb avis', 'Note moyenne', 'Satisfaits (≥7)', 'Insatisfaits (≤3)']);
+    fputcsv($out, ['Operateur', 'Nb avis', 'Note moyenne', 'Satisfaits (>=7)', 'Insatisfaits (<=3)']);
     foreach ($rows as $r) {
         fputcsv($out, [$r['operateur'], $r['nb_avis'], $r['note_moy'], $r['satisfaits'], $r['insatisfaits']]);
     }
@@ -32,7 +31,6 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     exit;
 }
 
-// --- Données affichage ---
 $stmt = db()->query("
     SELECT
         o.id, o.nom, o.slug, o.couleur,
@@ -67,17 +65,17 @@ require_once __DIR__ . '/../includes/header.php';
 </div>
 
 <div class="card card-artec mb-4">
-    <div class="card-header"><i class="bi bi-table"></i> Synthèse par opérateur</div>
+    <div class="card-header"><i class="bi bi-table"></i> Synthese par operateur</div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-artec mb-0">
                 <thead>
                     <tr>
-                        <th>Opérateur</th>
+                        <th>Operateur</th>
                         <th>Avis</th>
                         <th>Note moyenne</th>
-                        <th>Satisfaits (≥7)</th>
-                        <th>Insatisfaits (≤3)</th>
+                        <th>Satisfaits (>=7)</th>
+                        <th>Insatisfaits (<=3)</th>
                         <th>Taux satisfaction</th>
                     </tr>
                 </thead>
@@ -107,11 +105,11 @@ require_once __DIR__ . '/../includes/header.php';
 </div>
 
 <div class="card card-artec">
-    <div class="card-header"><i class="bi bi-geo-alt"></i> Top régions par nombre d'avis</div>
+    <div class="card-header"><i class="bi bi-geo-alt"></i> Top regions par nombre d'avis</div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-artec mb-0">
-                <thead><tr><th>Région</th><th>Nb avis</th><th>Note moyenne</th></tr></thead>
+                <thead><tr><th>Region</th><th>Nb avis</th><th>Note moyenne</th></tr></thead>
                 <tbody>
                     <?php foreach ($parRegion as $r): ?>
                         <tr>

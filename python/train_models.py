@@ -1,92 +1,177 @@
-from __future__ import annotations
-
-import logging
+import sys
+from datetime import datetime
 
 import joblib
+import numpy as np
 import pandas as pd
-from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import IsolationForest, RandomForestClassifier, RandomForestRegressor
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split
 
-from config import MINIMUM_TRAINING_REVIEWS, MODEL_DIR
-from data_loader import load_reviews, load_training_threshold
+from config import (
+    RF_SATISFACTION_PARAMS, RF_RISQUE_PARAMS, TFIDF_PARAMS, ISOLATION_PARAMS,
+    MIN_AVIS_POUR_ENTRAINEMENT, TEST_SIZE, RANDOM_STATE, MODELS_DIR, LOGS_DIR,
+    SEUIL_SATISFACTION
+)
+from data_loader import (
+    load_avis, load_stats_par_operateur,
+    save_model_metadata
+)
 
 
-def structured_features() -> ColumnTransformer:
-    return ColumnTransformer(
-        transformers=[
-            ("comment", TfidfVectorizer(max_features=2500, ngram_range=(1, 2), min_df=1), "comment"),
-            ("categories", OneHotEncoder(handle_unknown="ignore"), ["operator_code", "region", "service"]),
-        ]
+def log(msg):
+    line = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}"
+    print(line)
+    with open(LOGS_DIR / 'ml.log', 'a', encoding='utf-8') as f:
+        f.write(line + '\n')
+
+
+def train_satisfaction(df):
+    log("--- Entrainement satisfaction_rf ---")
+    X = pd.get_dummies(df[['operateur_id', 'region', 'service']], drop_first=True)
+    y = df['note']
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE
     )
 
+    model = RandomForestRegressor(**RF_SATISFACTION_PARAMS)
+    model.fit(X_train, y_train)
 
-def main() -> int:
-    logging.info("Starting model training")
-    reviews = load_reviews()
-    minimum_reviews = load_training_threshold(MINIMUM_TRAINING_REVIEWS)
-    if len(reviews) < minimum_reviews:
-        logging.warning("Training skipped: %s/%s reviews", len(reviews), minimum_reviews)
-        print(f"Entraînement ignoré : {len(reviews)} avis disponibles, {minimum_reviews} requis.")
-        return 0
+    y_pred = model.predict(X_test)
+    rmse = float(np.sqrt(mean_squared_error(y_test, y_pred)))
+    r2 = float(r2_score(y_test, y_pred))
+    log(f"Satisfaction : RMSE={rmse:.2f}, R2={r2:.2f}")
 
-    features = reviews[["comment", "operator_code", "region", "service"]].fillna("")
-    satisfaction = Pipeline(
-        [
-            ("features", structured_features()),
-            ("model", RandomForestRegressor(n_estimators=250, min_samples_leaf=2, random_state=42, n_jobs=-1)),
-        ]
-    )
-    satisfaction.fit(features, reviews["rating"].astype(float))
-    joblib.dump(satisfaction, MODEL_DIR / "satisfaction_rf.pkl")
+    fichier = MODELS_DIR / 'satisfaction_rf.pkl'
+    joblib.dump({'model': model, 'columns': list(X.columns)}, fichier)
+    save_model_metadata('satisfaction_rf', '1.0', 'regressor', str(fichier), None, rmse)
+    log(f"Modele sauvegarde : {fichier}")
+    return model, rmse
 
-    # Compliance labels are only a weak proxy until expert-labelled data exists.
-    compliance_labels = ((reviews["rating"] <= 3) | reviews["has_complaint"].astype(bool)).astype(int)
-    compliance = Pipeline(
-        [
-            ("features", structured_features()),
-            ("model", RandomForestClassifier(n_estimators=250, class_weight="balanced", random_state=42, n_jobs=-1)),
-        ]
-    )
-    compliance.fit(features, compliance_labels)
-    joblib.dump(compliance, MODEL_DIR / "risque_rf.pkl")
 
-    sentiment_labels = pd.Series("neutral", index=reviews.index)
-    sentiment_labels.loc[reviews["rating"] >= 7] = "positive"
-    sentiment_labels.loc[reviews["rating"] <= 4] = "negative"
-    if sentiment_labels.nunique() >= 2:
-        sentiment = Pipeline(
-            [
-                ("tfidf", TfidfVectorizer(max_features=4000, ngram_range=(1, 2), min_df=1)),
-                ("model", LogisticRegression(max_iter=1000, class_weight="balanced", random_state=42)),
-            ]
-        )
-        sentiment.fit(reviews["comment"].fillna(""), sentiment_labels)
-        joblib.dump(sentiment, MODEL_DIR / "sentiment_tfidf.pkl")
+def train_risque(df_stats):
+    log("--- Entrainement risque_rf ---")
+
+    if len(df_stats) < 3:
+        log("Pas assez d'operateurs pour entrainer (min 3). Skip.")
+        return None, None
+
+    df_stats = df_stats.copy()
+    df_stats['risque'] = (
+        (df_stats['note_moyenne'] < 5) |
+        (df_stats['nb_reclamations_ouvertes'] >= 3) |
+        (df_stats['nb_decisions_ouvertes'] >= 2)
+    ).astype(int)
+
+    features = ['nb_avis', 'note_moyenne', 'nb_satisfaits',
+                'nb_insatisfaits', 'nb_neutres',
+                'nb_reclamations_ouvertes', 'nb_decisions_ouvertes']
+    X = df_stats[features]
+    y = df_stats['risque']
+
+    if y.nunique() < 2:
+        log("Une seule classe. Fallback heuristique.")
+        model = RandomForestClassifier(**RF_RISQUE_PARAMS)
+        X_dup = pd.concat([X, X])
+        y_dup = pd.concat([y, 1 - y])
+        model.fit(X_dup, y_dup)
+        acc = 1.0
     else:
-        logging.warning("Sentiment model skipped: fewer than two weak-label classes")
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE
+        )
+        model = RandomForestClassifier(**RF_RISQUE_PARAMS)
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+        acc = float(accuracy_score(y_test, y_pred))
 
-    anomaly_features = pd.DataFrame(
-        {
-            "rating": reviews["rating"].astype(float),
-            "comment_length": reviews["comment"].fillna("").str.len().clip(upper=2000),
-        }
+    log(f"Risque : accuracy={acc:.2f}")
+    fichier = MODELS_DIR / 'risque_rf.pkl'
+    joblib.dump({'model': model, 'features': features}, fichier)
+    save_model_metadata('risque_rf', '1.0', 'classifier', str(fichier), acc, None)
+    log(f"Modele sauvegarde : {fichier}")
+    return model, acc
+
+
+def train_sentiment(df):
+    log("--- Entrainement sentiment_tfidf ---")
+    data = df[df['commentaire'].str.strip() != ''].copy()
+    data = data[(data['note'] >= 7) | (data['note'] <= 4)]
+    data['label'] = (data['note'] >= 7).astype(int)
+
+    if len(data) < 10 or data['label'].nunique() < 2:
+        log(f"Pas assez de commentaires labellises (n={len(data)}). Skip.")
+        return None, None
+
+    vectorizer = TfidfVectorizer(**TFIDF_PARAMS)
+    X = vectorizer.fit_transform(data['commentaire'])
+    y = data['label']
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE
     )
-    anomaly = Pipeline(
-        [
-            ("scale", StandardScaler()),
-            ("model", IsolationForest(n_estimators=200, contamination="auto", random_state=42)),
-        ]
-    )
-    anomaly.fit(anomaly_features)
-    joblib.dump(anomaly, MODEL_DIR / "anomaly_if.pkl")
-    logging.info("Model training completed with %s reviews", len(reviews))
-    print(f"Modèles entraînés avec {len(reviews)} avis.")
-    return 0
+    model = LogisticRegression(max_iter=1000, random_state=RANDOM_STATE)
+    model.fit(X_train, y_train)
+
+    y_pred = model.predict(X_test)
+    acc = float(accuracy_score(y_test, y_pred))
+    log(f"Sentiment : accuracy={acc:.2f}")
+
+    fichier = MODELS_DIR / 'sentiment_tfidf.pkl'
+    joblib.dump({'model': model, 'vectorizer': vectorizer}, fichier)
+    save_model_metadata('sentiment_tfidf', '1.0', 'classifier', str(fichier), acc, None)
+    log(f"Modele sauvegarde : {fichier}")
+    return model, acc
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+def train_anomaly(df):
+    log("--- Entrainement anomaly_if ---")
+    if len(df) < 20:
+        log(f"Pas assez d'avis (n={len(df)}). Skip.")
+        return None
+
+    X = df[['note']].values
+
+    model = IsolationForest(**ISOLATION_PARAMS)
+    model.fit(X)
+
+    fichier = MODELS_DIR / 'anomaly_if.pkl'
+    joblib.dump({'model': model}, fichier)
+    save_model_metadata('anomaly_if', '1.0', 'anomaly', str(fichier), None, None)
+    log(f"Modele sauvegarde : {fichier}")
+    return model
+
+
+def main():
+    log("=" * 60)
+    log("DEMARRAGE ENTRAINEMENT MODELES ARTEC")
+    log("=" * 60)
+
+    df_avis = load_avis()
+    log(f"Charge {len(df_avis)} avis publies.")
+
+    if len(df_avis) < MIN_AVIS_POUR_ENTRAINEMENT:
+        log(f"Seulement {len(df_avis)} avis (min {MIN_AVIS_POUR_ENTRAINEMENT}).")
+        log("On entraine quand meme pour la demo.")
+
+    if len(df_avis) < 10:
+        log("Pas assez d'avis pour entrainer. Arret.")
+        sys.exit(1)
+
+    df_stats = load_stats_par_operateur()
+
+    train_satisfaction(df_avis)
+    train_risque(df_stats)
+    train_sentiment(df_avis)
+    train_anomaly(df_avis)
+
+    log("=" * 60)
+    log("ENTRAINEMENT TERMINE")
+    log("=" * 60)
+
+
+if __name__ == '__main__':
+    main()

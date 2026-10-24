@@ -1,0 +1,19 @@
+<?php
+define('ML_PYTHON_DIR', ROOT_PATH . DIRECTORY_SEPARATOR . 'python');
+define('ML_VENV_PYTHON', ML_PYTHON_DIR . DIRECTORY_SEPARATOR . 'venv' . DIRECTORY_SEPARATOR . 'Scripts' . DIRECTORY_SEPARATOR . 'python.exe');
+define('ML_PREDICT_BAT', ML_PYTHON_DIR . DIRECTORY_SEPARATOR . 'run_prediction.bat');
+define('ML_TRAIN_BAT', ML_PYTHON_DIR . DIRECTORY_SEPARATOR . 'run_training.bat');
+
+define('ML_LOGS_DIR', ROOT_PATH . DIRECTORY_SEPARATOR . 'logs');
+define('ML_RUNNER_LOG', ML_LOGS_DIR . DIRECTORY_SEPARATOR . 'ml_runner.log');
+define('ML_STATE_FILE', ML_LOGS_DIR . DIRECTORY_SEPARATOR . 'auto_ml_state.json');
+
+define('ML_PREDICT_INTERVAL', 3600);
+define('ML_TRAIN_INTERVAL', 604800);
+define('ML_MIN_AVIS_TRAIN', 100);
+
+define('ML_AUTO_ENABLED', true);
+define('ALERTE_NOTE_BASSE', 5.0);
+define('ALERTE_AVIS_NEGATIFS_PCT', 40);
+define('ALERTE_RECLAMATIONS_OUVERTES', 3);
+define('ALERTE_INTERVALLE', 86400);

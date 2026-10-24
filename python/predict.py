@@ -1,90 +1,207 @@
-from __future__ import annotations
-
-import logging
-from datetime import date
+import sys
+from datetime import datetime
 
 import joblib
-import mysql.connector
+import numpy as np
 import pandas as pd
 
-from config import DB_CONFIG, MODEL_DIR
-from data_loader import load_recent_reviews
-from train_models import main as train_models
+from config import MODELS_DIR, LOGS_DIR, SEUIL_RISQUE_NON_CONFORMITE
+from data_loader import (
+    load_avis, load_stats_par_operateur, save_predictions
+)
 
 
-def main() -> int:
-    required = ["satisfaction_rf.pkl", "risque_rf.pkl", "anomaly_if.pkl"]
-    missing = [name for name in required if not (MODEL_DIR / name).exists()]
-    if missing:
-        train_models()
-        missing = [name for name in required if not (MODEL_DIR / name).exists()]
-        if missing:
-            logging.error("Prediction skipped; missing models: %s", ", ".join(missing))
-            print("Modèles manquants : " + ", ".join(missing) + ". Le seuil d’entraînement n’est pas encore atteint.")
-            return 1
+def log(msg):
+    line = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}"
+    print(line)
+    with open(LOGS_DIR / 'ml.log', 'a', encoding='utf-8') as f:
+        f.write(line + '\n')
 
-    satisfaction = joblib.load(MODEL_DIR / "satisfaction_rf.pkl")
-    compliance = joblib.load(MODEL_DIR / "risque_rf.pkl")
-    anomaly = joblib.load(MODEL_DIR / "anomaly_if.pkl")
-    sentiment_path = MODEL_DIR / "sentiment_tfidf.pkl"
-    sentiment = joblib.load(sentiment_path) if sentiment_path.exists() else None
-    connection = mysql.connector.connect(**DB_CONFIG)
-    written = 0
-    try:
-        for operator_code in ("orange", "yas", "airtel"):
-            reviews = load_recent_reviews(operator_code)
-            if reviews.empty:
-                continue
-            features = reviews[["comment", "operator_code", "region", "service"]].fillna("")
-            score = float(satisfaction.predict(features).mean())
-            classifier = compliance.named_steps["model"]
-            if 1 in classifier.classes_:
-                positive_index = list(classifier.classes_).index(1)
-                risk = float(compliance.predict_proba(features)[:, positive_index].mean() * 100)
+
+def model_exists(name):
+    return (MODELS_DIR / name).exists()
+
+
+def predict_satisfaction(df):
+    log("--- Prediction satisfaction par operateur ---")
+    path = MODELS_DIR / 'satisfaction_rf.pkl'
+    if not path.exists():
+        log("Modele satisfaction introuvable. Skip.")
+        return []
+
+    bundle = joblib.load(path)
+    model = bundle['model']
+    columns = bundle['columns']
+
+    results = []
+    for op_id in df['operateur_id'].unique():
+        sub = df[df['operateur_id'] == op_id]
+        row = pd.DataFrame([{
+            'operateur_id': op_id,
+            'region': sub['region'].mode().iloc[0] if len(sub['region'].mode()) else 'Antananarivo',
+            'service': sub['service'].mode().iloc[0] if len(sub['service'].mode()) else 'mobile',
+        }])
+        X = pd.get_dummies(row, drop_first=True)
+        X = X.reindex(columns=columns, fill_value=0)
+
+        try:
+            valeur = float(model.predict(X)[0])
+            valeur = max(0.0, min(10.0, valeur))
+            results.append({
+                'operateur_id': int(op_id),
+                'type_prediction': 'satisfaction',
+                'valeur': round(valeur, 2),
+                'label': 'Satisfaction predite',
+                'score_confiance': None,
+                'details': None,
+                'modele_version': '1.0',
+            })
+        except Exception as e:
+            log(f"Erreur prediction satisfaction op {op_id} : {e}")
+
+    log(f"{len(results)} predictions satisfaction.")
+    return results
+
+
+def predict_risque(df_stats):
+    log("--- Prediction risque par operateur ---")
+    path = MODELS_DIR / 'risque_rf.pkl'
+    if not path.exists():
+        log("Modele risque introuvable. Skip.")
+        return []
+
+    bundle = joblib.load(path)
+    model = bundle['model']
+    features = bundle['features']
+
+    results = []
+    for _, row in df_stats.iterrows():
+        X = row[features].to_frame().T.astype(float)
+        try:
+            proba = model.predict_proba(X)[0]
+            proba_risque = float(proba[1]) if len(proba) > 1 else 0.0
+            label = 'Eleve' if proba_risque >= 0.6 else ('Moyen' if proba_risque >= 0.3 else 'Faible')
+            results.append({
+                'operateur_id': int(row['operateur_id']),
+                'type_prediction': 'risque_non_conformite',
+                'valeur': round(proba_risque, 4),
+                'label': label,
+                'score_confiance': round(float(max(proba)), 4),
+                'details': None,
+                'modele_version': '1.0',
+            })
+        except Exception as e:
+            log(f"Erreur prediction risque op {row['operateur_id']} : {e}")
+
+    log(f"{len(results)} predictions risque.")
+    return results
+
+
+def predict_sentiment(df):
+    log("--- Prediction sentiment par operateur ---")
+    path = MODELS_DIR / 'sentiment_tfidf.pkl'
+    if not path.exists():
+        log("Modele sentiment introuvable. Skip.")
+        return []
+
+    bundle = joblib.load(path)
+    model = bundle['model']
+    vectorizer = bundle['vectorizer']
+
+    results = []
+    for op_id in df['operateur_id'].unique():
+        sub = df[(df['operateur_id'] == op_id) & (df['commentaire'].str.strip() != '')]
+        if sub.empty:
+            continue
+
+        X = vectorizer.transform(sub['commentaire'])
+        try:
+            probas = model.predict_proba(X)
+            if probas.shape[1] > 1:
+                moyenne_positif = float(probas[:, 1].mean())
             else:
-                risk = 0.0
-            labels = sentiment.predict(reviews["comment"].fillna("")) if sentiment else []
-            sentiment_label = str(pd.Series(labels).mode().iloc[0]) if len(labels) else "indisponible"
-            anomaly_features = pd.DataFrame(
-                {
-                    "rating": reviews["rating"].astype(float),
-                    "comment_length": reviews["comment"].fillna("").str.len().clip(upper=2000),
-                }
-            )
-            anomaly_count = int((anomaly.predict(anomaly_features) == -1).sum())
-            cursor = connection.cursor()
-            cursor.execute(
-                """INSERT INTO predictions
-                   (operator_code, prediction_date, satisfaction_score, compliance_risk, sentiment_label, anomaly_count, review_count, model_version)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                   ON DUPLICATE KEY UPDATE satisfaction_score=VALUES(satisfaction_score),
-                     compliance_risk=VALUES(compliance_risk), sentiment_label=VALUES(sentiment_label),
-                     anomaly_count=VALUES(anomaly_count), review_count=VALUES(review_count),
-                     model_version=VALUES(model_version)""",
-                (
-                    operator_code,
-                    date.today(),
-                    round(max(0, min(10, score)), 2),
-                    round(max(0, min(100, risk)), 2),
-                    sentiment_label,
-                    anomaly_count,
-                    len(reviews),
-                    "rf-v1",
-                ),
-            )
-            cursor.close()
-            written += 1
-        connection.commit()
-    except Exception:
-        connection.rollback()
-        logging.exception("Daily prediction failed")
-        raise
-    finally:
-        connection.close()
-    logging.info("Daily predictions written for %s operators", written)
-    print(f"Prédictions actualisées pour {written} opérateur(s).")
-    return 0
+                moyenne_positif = float(probas[:, 0].mean())
+
+            label = 'Positif' if moyenne_positif >= 0.6 else ('Negatif' if moyenne_positif <= 0.4 else 'Neutre')
+            results.append({
+                'operateur_id': int(op_id),
+                'type_prediction': 'sentiment',
+                'valeur': round(moyenne_positif, 4),
+                'label': label,
+                'score_confiance': None,
+                'details': None,
+                'modele_version': '1.0',
+            })
+        except Exception as e:
+            log(f"Erreur prediction sentiment op {op_id} : {e}")
+
+    log(f"{len(results)} predictions sentiment.")
+    return results
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+def predict_anomalies(df):
+    log("--- Prediction anomalies ---")
+    path = MODELS_DIR / 'anomaly_if.pkl'
+    if not path.exists():
+        log("Modele anomalies introuvable. Skip.")
+        return []
+
+    bundle = joblib.load(path)
+    model = bundle['model']
+
+    results = []
+    for op_id in df['operateur_id'].unique():
+        sub = df[df['operateur_id'] == op_id]
+        if sub.empty:
+            continue
+        X = sub[['note']].values.astype(float)
+        try:
+            preds = model.predict(X)
+            nb_anomalies = int((preds == -1).sum())
+            results.append({
+                'operateur_id': int(op_id),
+                'type_prediction': 'anomalie',
+                'valeur': nb_anomalies,
+                'label': f'{nb_anomalies} avis suspect(s)',
+                'score_confiance': None,
+                'details': None,
+                'modele_version': '1.0',
+            })
+        except Exception as e:
+            log(f"Erreur anomalies op {op_id} : {e}")
+
+    log(f"{len(results)} predictions anomalies.")
+    return results
+
+
+def main():
+    log("=" * 60)
+    log("DEMARRAGE PREDICTIONS ARTEC")
+    log("=" * 60)
+
+    df_avis = load_avis()
+    df_stats = load_stats_par_operateur()
+
+    if len(df_avis) < 5:
+        log("Pas assez d'avis. Arret.")
+        sys.exit(1)
+
+    all_predictions = []
+    all_predictions += predict_satisfaction(df_avis)
+    all_predictions += predict_risque(df_stats)
+    all_predictions += predict_sentiment(df_avis)
+    all_predictions += predict_anomalies(df_avis)
+
+    if all_predictions:
+        count = save_predictions(all_predictions)
+        log(f"{count} predictions ecrites dans la table predictions.")
+    else:
+        log("Aucune prediction generee.")
+
+    log("=" * 60)
+    log("PREDICTIONS TERMINEES")
+    log("=" * 60)
+
+
+if __name__ == '__main__':
+    main()
