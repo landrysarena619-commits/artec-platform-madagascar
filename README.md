@@ -1,6 +1,6 @@
 # Plateforme Intelligente de Regulation des Telecommunications a Madagascar
 
-Plateforme web officielle de regulation des telecommunications a Madagascar pour l'ARTEC (Autorite de Regulation des Technologies de Communication) et les 3 operateurs : Orange Madagascar, Yas Madagascar et Airtel Madagascar.
+Plateforme web de regulation des telecommunications a Madagascar pour l'ARTEC (Autorite de Regulation des Technologies de Communication) et les 3 operateurs : Orange Madagascar, Yas Madagascar et Airtel Madagascar.
 
 ## Objectif du Projet
 
